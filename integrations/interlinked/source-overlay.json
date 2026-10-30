@@ -1,0 +1,62 @@
+{
+  "format": "interlinked-buddy-source-overlay-v1",
+  "source": "C:\\Users\\Jude\\Documents\\Codex\\INTERLINKED",
+  "files": [
+    {
+      "path": "repository/app/interlinked_gui.py",
+      "before_sha256": "dd830e8ee31a2f79d0bbc21758c76cc66d2b230bbe7bf30d0c63be04ca876de5",
+      "source_path": "repository/app/interlinked_gui.py",
+      "source_sha256": "dd830e8ee31a2f79d0bbc21758c76cc66d2b230bbe7bf30d0c63be04ca876de5",
+      "sha256": "5700421af16ff3f6537b7d6f0f87b38e2fa2c599a16193c92b10ac3a27b73482"
+    },
+    {
+      "path": "repository/app/interlinked_controller.py",
+      "before_sha256": "e08d357aec6d470d5df29e3e810f1e1b54ff6830fd768bedb3e9082e324d4958",
+      "source_path": "repository/app/interlinked_controller.py",
+      "source_sha256": "e08d357aec6d470d5df29e3e810f1e1b54ff6830fd768bedb3e9082e324d4958",
+      "sha256": "093cd4d17dc32251c98c8fbaf54d8fe2dc4467ac7e3ac3ca9bebda631fbee8a0"
+    },
+    {
+      "path": "repository/work/magix-buddy/candidate/magix_projects.py",
+      "before_sha256": null,
+      "source_path": "repository/work/magix-all-projects/candidate/magix_projects.py",
+      "source_sha256": "6c2ea58d9ac89a20c4b2bb42347b79f5802b049b2c81812314e09412578de1bf",
+      "sha256": "820d01eae1f65f5b030c1f0f3a12bbe02d335963a3ff131e06f63e3e43bef2db"
+    },
+    {
+      "path": "repository/app/web/app.js",
+      "before_sha256": "2a28dbb5318f1faea37e3b29582d8534b65266701ff16dcd3b51991fc8129d3e",
+      "source_path": "repository/app/web/app.js",
+      "source_sha256": "2a28dbb5318f1faea37e3b29582d8534b65266701ff16dcd3b51991fc8129d3e",
+      "sha256": "7183f7dbc7c644b4fc7d7d6da08fe4f12ac1fbdd82d9cff7fe2d6d876a304ea4"
+    },
+    {
+      "path": "repository/app/web/index.html",
+      "before_sha256": "a00f89ac88271af95ecc7c7fd13d331537e075e115c7a087e36000426033156e",
+      "source_path": "repository/app/web/index.html",
+      "source_sha256": "a00f89ac88271af95ecc7c7fd13d331537e075e115c7a087e36000426033156e",
+      "sha256": "e765b5aa189154c74b942bf7105fc5dfb5b16234e76a9d22c75dcfb6b4810c10"
+    },
+    {
+      "path": "repository/app/web/style.css",
+      "before_sha256": "b7c25ed07dbf19fbaf4654e131bf3191869df17a49632c9287be9a61000f1e59",
+      "source_path": "repository/app/web/style.css",
+      "source_sha256": "b7c25ed07dbf19fbaf4654e131bf3191869df17a49632c9287be9a61000f1e59",
+      "sha256": "8364439ed3b9fc5ad628ade28e86468dea67a3cc50ac7cf25716b893980564e8"
+    },
+    {
+      "path": "repository/app/interlinked_buddy.py",
+      "before_sha256": null,
+      "sha256": "6fad875559ba94d43a27fdb279933b728e80da91e714cb85a15ccc018580f809"
+    }
+  ],
+  "required_gui_seal": {
+    "format": "interlinked-gui-checksums-v5",
+    "additional_files": [
+      "interlinked_buddy.py"
+    ],
+    "magix_sha256": "820d01eae1f65f5b030c1f0f3a12bbe02d335963a3ff131e06f63e3e43bef2db",
+    "frozen_base_unchanged": true
+  },
+  "publication_deferred": true
+}

@@ -4,7 +4,9 @@ A working Windows companion for MAGIX Movie Edit Pro 2021 Plus Steam Edition. It
 
 The companion, export preview, and MSI portal share a yellow Matrix theme inspired by [INTERLINKED](https://github.com/bug220r-lab/interlinked): dark olive panels, monospace text, yellow focus and selection states, and a quiet binary/scanline header. The theme is bundled in the executable and needs no extra assets.
 
-**Design direction:** ED-IT Buddy is evolving into a whiteboard for scene ideas, references, tasks, and progress while the actual edit stays in MAGIX. The existing 0.1.0 executable is the review companion described below. Whiteboard design and the investigation of embedded UI and saved-project access are documented in [integration feasibility](docs/integration-feasibility.md); they are not yet features of that executable.
+**Product direction:** ED-IT Buddy should manage the busy work around editing: find clips in supplied footage, acquire requested internet videos through the existing MSI downloader, organize project assets, track tasks, and report progress. It should feed assets and work results into INTERLINKED, which owns project identity, managed workspaces, and verified save-back. See the [INTERLINKED integration plan](docs/interlinked-integration.md) and [MSI downloader discovery](docs/video-downloader-discovery.md). These are planned additions; the existing 0.1.0 executable remains the review companion described below. The earlier [whiteboard and MAGIX investigation](docs/integration-feasibility.md) is background research.
+
+**Manager preview in source:** The desktop Manager, durable task broker, MSI media engine, chat adapter and INTERLINKED companion contribution are now implemented as a development preview. Run `./package-assistant.ps1` to build a separate package. The original `bin` stays unchanged. See [assistant status and release gates](docs/assistant-release.md) for actual verification and the remaining live acceptance work. The INTERLINKED contribution is a candidate overlay, not a deployed update.
 
 ## Start
 

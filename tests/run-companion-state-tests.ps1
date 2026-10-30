@@ -9,7 +9,7 @@ foreach ($reference in @('System.dll','System.Core.dll','System.Web.Extensions.d
     $arguments += "/reference:$referencePath"
 }
 $output = Join-Path $PSScriptRoot 'CompanionStateTests.exe'
-& $compiler @arguments "/out:$output" (Join-Path $testRoot 'src\MagixController.cs') (Join-Path $testRoot 'src\ControllerPolicy.cs') (Join-Path $testRoot 'src\MatrixTheme.cs') (Join-Path $testRoot 'src\App.cs') (Join-Path $testRoot 'src\ReviewStore.cs') (Join-Path $PSScriptRoot 'CompanionStateTests.cs')
+& $compiler @arguments "/out:$output" (Join-Path $testRoot 'src\MagixController.cs') (Join-Path $testRoot 'src\ControllerPolicy.cs') (Join-Path $testRoot 'src\MatrixTheme.cs') (Join-Path $testRoot 'src\AssistantProcessClient.cs') (Join-Path $testRoot 'src\AssistantView.cs') (Join-Path $testRoot 'src\App.cs') (Join-Path $testRoot 'src\ReviewStore.cs') (Join-Path $PSScriptRoot 'CompanionStateTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Companion state tests failed to compile.' }
 & $output
 if ($LASTEXITCODE -ne 0) { throw 'Companion state tests failed.' }

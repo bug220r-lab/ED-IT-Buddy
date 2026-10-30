@@ -1,0 +1,7 @@
+{
+  "expected_host": "MSI",
+  "downloader_root": "C:\\Users\\jlewi\\Documents\\VideoDownloader",
+  "source_allowlist": ["C:\\Users\\jlewi\\Documents", "C:\\Users\\jlewi\\OneDrive\\Documents"],
+  "model_path": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\models\\siglip2-base-patch16-224",
+  "model_revision": "PIN_AFTER_COMPATIBILITY_PREFLIGHT"
+}

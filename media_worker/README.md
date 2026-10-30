@@ -1,0 +1,46 @@
+# MSI media worker
+
+This independent Python worker implements durable media jobs for Buddy. It does not operate MAGIX or change INTERLINKED's sealed Python runtime. It must be deployed and preflighted separately; source tests do not establish GPU or site availability.
+
+## Processes and state
+
+`rpc.py --state <absolute-directory> --config <absolute-json>` is a UTF-8 JSON-lines bridge. Each request is `{ "id": "correlation", "method": "get_capabilities", "params": {} }`; each response has the same `id`, `result`, and `error`. It never starts work itself. `worker.py` with the same arguments owns the execution queue and continues when an SSH bridge closes. A native lock prevents two workers from executing the same queue. Run it under the scheduled MSI user context used for the GPU preflight.
+
+State is separate from sources and tools. `OWNER.json` binds the state to machine/user, `media.sqlite3` holds durable jobs/index records, `jobs/<job-id>` holds outputs, logs, checkpoints and manifests, and `index` holds visual embeddings' thumbnails. The example configuration intentionally contains an unpinned model marker and cannot enable model loading until deployment supplies a real revision. `source_allowlist` must contain reviewed physical source parents; registration selects a folder within those parents. Links, unhydrated paths, drive-wide default scans, and overlapping source/state roots are refused.
+
+The worker requires Python 3.10 or newer. Ordinary bridge/task operations use the standard library only. Visual jobs lazily load an isolated PyTorch/Transformers/Pillow environment and a locally installed SigLIP2 checkpoint. Model loading uses `local_files_only=True` and `trust_remote_code=False`. No model download, runtime installation or driver update occurs automatically.
+
+`runtime-installation.json` and `requirements.installation.txt` record the successful isolated MSI setup's Python/package versions and exact model revision. They establish installation only. The model has not thereby passed CUDA inference in the scheduled worker context, and these records do not replace runtime/tool seals or a GPU-preflight receipt.
+
+`worker.py --preflight` tests text and image inference in that launch context and writes `gpu-preflight.json`. `get_preflight` reads the receipt and refuses a different model revision. A missing receipt is reported as unverified.
+
+## Request methods
+
+| Method | Parameters |
+| --- | --- |
+| `get_capabilities`, `get_preflight`, `list_source_roots` | `{}` |
+| `register_source_root` | `{path,label?}` |
+| `inventory` | `{root_id,limit?}`; bounded ordinary media-file metadata |
+| `submit_job` | `{request_id,kind,project_id,params}` |
+| `get_job`, `get_results`, `pause_job`, `resume_job`, `cancel_job` | `{job_id}` |
+| `list_jobs` | `{project_id?,limit?}` |
+
+Identical submissions return their original durable job. Reusing a request ID for different work is rejected. `get_results` returns `{job,manifest,manifest_path}`. Completed artifacts include `absolute_path`, job-relative `relative_path`, byte size and SHA-256. Search matches include source identity/time range and thumbnail path/hash/size. Consumers must verify transferred bytes and use INTERLINKED's ingestion contract rather than directly overwriting a cache.
+
+Committed video and preview artifacts can themselves be selected for preview, extraction or organization. Their provenance is recorded in a separate generated-assets table: each reuse revalidates the completed job manifest, owned job-relative path, byte size and content hash. This does not permit source-folder registration of worker state or arbitrary state files. Metadata sidecars are not accepted as media inputs.
+
+## Job kinds
+
+- `download`: `{urls:[...]}`. Uses supplied individual links, a per-job archive and source receipts, isolated yt-dlp outputs, editor conversion and complete output decode. It preserves downloaded sources and existing downloader data. Conversion retries reuse the already downloaded source. No source cleanup script is invoked.
+- `index`: `{root_ids:[...],sample_seconds?:2,asset_ids?:[...],start_seconds?:0,end_seconds?}`. Extracts actual presentation timestamps in 60-second chunks, stores checkpoints and yields to queued interactive work. One decoder and one GPU model are used. The model starts at batch eight and reduces to four/one after CUDA memory exhaustion.
+- `search`: `{query,root_ids?:[...],limit?:20}`. Runs local text/image retrieval and returns grouped candidate ranges with relative similarity scores, not probabilities. Results remain suggestions.
+- `preview`, `extract`: `{asset_id,start_seconds,end_seconds}`. Preview ranges are bounded to 60 seconds and extracts to one hour. Produces verified H.264/AAC output without modifying source footage.
+- `organize`: `{asset_ids:[...],group_by?:"source",tag?}`. `group_by` is `source`, `date` (file modification date), or `tag`. Copies to an organized job tree, checks hashes, retains originals, and returns an organization map. It never deletes duplicates.
+
+Index jobs reuse identical-content samples while retaining source aliases. Changed source metadata excludes stale search results until reindexing. Changed model revisions cannot reuse previous embeddings. Finer-range profiles do not incorrectly mark a whole recording indexed.
+
+## Verification
+
+Run `python -B -m unittest discover -s tests -p test_media_worker.py -v` from the Buddy repository. The fixtures exercise six hours of virtual source duration, VFR-like timestamps, recovery, idempotency, isolated download/conversion retry, source preservation, copy-first organization, source/model invalidation, queue controls, protocol correlation and owned process cancellation.
+
+Those fixtures use fake media tools and embeddings except the bounded cancellation subprocess. They are not a real six-hour decode, useful visual-search evaluation, new internet-download test, CUDA benchmark, or installed MSI acceptance result. The release still needs representative footage, verified deployment/runtime pins, real GPU preflight, live source availability and INTERLINKED handoff acceptance.

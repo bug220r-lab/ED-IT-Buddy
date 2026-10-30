@@ -95,6 +95,7 @@ namespace EditBuddy
         private readonly Button refreshButton;
         private readonly CheckBox offlineToggle = new CheckBox();
         private readonly TabControl tabs = new TabControl();
+        private readonly AssistantView assistant;
         private readonly ComboBox notePicker = new ComboBox();
         private readonly ListBox noteList = new ListBox();
         private readonly StackPanel guideDetail = new StackPanel();
@@ -143,7 +144,7 @@ namespace EditBuddy
             }
             selected = document.Notes.FirstOrDefault();
             Title = "ED-IT Buddy";
-            Width = 492; Height = 880; MinWidth = 420; MinHeight = 620;
+            Width = 1180; Height = 940; MinWidth = 960; MinHeight = 720;
             MaxHeight = SystemParameters.WorkArea.Height;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             MatrixTheme.Apply(this);
@@ -151,26 +152,27 @@ namespace EditBuddy
             StackPanel header = new StackPanel { Margin = new Thickness(20, 17, 20, 14) };
             Border headerFrame = MatrixTheme.Header(header);
             DockPanel.SetDock(headerFrame, Dock.Top); outer.Children.Add(headerFrame);
-            header.Children.Add(MatrixTheme.Eyebrow("ED-IT // MAGIX COMPANION"));
+            header.Children.Add(MatrixTheme.Eyebrow("ED-IT // EDITING ASSISTANT"));
             DockPanel branding = new DockPanel(); header.Children.Add(branding);
             CheckBox pinned = new CheckBox { Content = "Keep on top", VerticalAlignment = VerticalAlignment.Center, Foreground = muted };
             DockPanel.SetDock(pinned, Dock.Right); branding.Children.Add(pinned);
             pinned.Checked += delegate { Topmost = true; };
             pinned.Unchecked += delegate { Topmost = false; };
             branding.Children.Add(new TextBlock { Text = "> ED-IT Buddy", FontSize = 23, FontWeight = FontWeights.SemiBold, Foreground = accent });
-            header.Children.Add(Label("Your MAGIX editing companion", 12, muted, 0, 3, 0, 14));
-            offlineToggle.Content = "Work offline"; offlineToggle.IsChecked = workOffline;
+            header.Children.Add(Label("Media, tasks, and project handoffs with INTERLINKED", 12, muted, 0, 3, 0, 14));
+            StackPanel legacyConnection = new StackPanel(); header.Children.Add(legacyConnection);
+            offlineToggle.Content = "Keep MAGIX review offline"; offlineToggle.IsChecked = workOffline;
             offlineToggle.Foreground = muted; offlineToggle.Margin = new Thickness(0, 0, 0, 10);
-            offlineToggle.ToolTip = "Use review notes and local video without inspecting, launching or controlling MAGIX.";
+            offlineToggle.ToolTip = "Controls only the legacy MAGIX review connection. The Manager connects to MSI and INTERLINKED separately using Connect / refresh.";
             AutomationProperties.SetAutomationId(offlineToggle, "WorkOffline");
             offlineToggle.Checked += delegate { if (!updatingOfflineToggle) SetOfflineMode(true); };
             offlineToggle.Unchecked += delegate { if (!updatingOfflineToggle) SetOfflineMode(false); };
-            header.Children.Add(offlineToggle);
+            legacyConnection.Children.Add(offlineToggle);
             connectionLabel.FontWeight = FontWeights.SemiBold; connectionLabel.TextWrapping = TextWrapping.Wrap;
-            connectionLabel.Text = "Checking MAGIX…"; header.Children.Add(connectionLabel);
+            connectionLabel.Text = "Checking MAGIX…"; legacyConnection.Children.Add(connectionLabel);
             connectionDetail.Foreground = muted; connectionDetail.FontSize = 12; connectionDetail.Margin = new Thickness(0, 3, 0, 0);
-            connectionDetail.TextWrapping = TextWrapping.Wrap; connectionDetail.MaxHeight = 72; header.Children.Add(connectionDetail);
-            WrapPanel headerButtons = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) }; header.Children.Add(headerButtons);
+            connectionDetail.TextWrapping = TextWrapping.Wrap; connectionDetail.MaxHeight = 72; legacyConnection.Children.Add(connectionDetail);
+            WrapPanel headerButtons = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) }; legacyConnection.Children.Add(headerButtons);
             launchButton = MakeButton("Launch MAGIX", async delegate { await LaunchMagix(); }, false);
             refreshButton = MakeButton("Connect to MAGIX", async delegate { if (workOffline) SetOfflineMode(false); await RefreshConnection(); }, false);
             AutomationProperties.SetAutomationId(launchButton, "LaunchMagix");
@@ -182,13 +184,18 @@ namespace EditBuddy
             footer.Child = status; DockPanel.SetDock(footer, Dock.Bottom); outer.Children.Add(footer);
             tabs.Background = Brushes.Transparent; tabs.BorderThickness = new Thickness(0); tabs.Margin = new Thickness(12, 0, 12, 0);
             outer.Children.Add(tabs);
+            assistant = new AssistantView(FindRoot());
+            tabs.Items.Add(new TabItem { Header = "Manager", Padding = new Thickness(21, 12, 21, 12), Content = assistant });
             tabs.Items.Add(Tab("Guide", BuildGuide()));
             tabs.Items.Add(Tab("Review", BuildReview()));
             tabs.Items.Add(Tab("Controls", BuildControls()));
+            legacyConnection.Visibility = Visibility.Collapsed;
+            footer.Visibility = Visibility.Collapsed;
+            tabs.SelectionChanged += delegate(object sender, SelectionChangedEventArgs e) { if (e.Source == tabs) { legacyConnection.Visibility = tabs.SelectedIndex == 0 ? Visibility.Collapsed : Visibility.Visible; footer.Visibility = legacyConnection.Visibility; } };
             RefreshNotes(); RenderConnection();
             Loaded += async delegate
             {
-                if (!workOffline) await RefreshConnection();
+                if (!workOffline && tabs.SelectedIndex != 0) await RefreshConnection();
                 else SetStatus("Offline mode: review notes and local video are available. Connect explicitly when you want MAGIX access.", false);
                 if (loadWarning != null) SetStatus(loadWarning, true);
             };
@@ -197,6 +204,7 @@ namespace EditBuddy
                 if (busy) { e.Cancel = true; SetStatus("Wait for the current operation to finish before closing.", false); return; }
                 if (editorDirty && !CommitNote()) e.Cancel = true;
             };
+            Closed += delegate { assistant.Dispose(); };
         }
 
         public static string FindRoot()
@@ -618,14 +626,14 @@ namespace EditBuddy
 
         private void PreviewVideo()
         {
-            if (String.IsNullOrWhiteSpace(document.ExportPath)) { SetStatus("Choose an existing video export in Review first.", true); tabs.SelectedIndex = 1; return; }
+            if (String.IsNullOrWhiteSpace(document.ExportPath)) { SetStatus("Choose an existing video export in Review first.", true); tabs.SelectedIndex = 2; return; }
             string candidate = document.ExportPath;
             if (candidate.Length < 3 || !Char.IsLetter(candidate[0]) || candidate[1] != ':' || (candidate[2] != '\\' && candidate[2] != '/'))
             { SetStatus("Choose a local video export. Network and web paths are not opened by the preview.", true); return; }
             string fullPath = Path.GetFullPath(candidate);
             if (new DriveInfo(Path.GetPathRoot(fullPath)).DriveType == DriveType.Network)
             { SetStatus("Choose a video stored on a local drive for preview.", true); return; }
-            if (!File.Exists(fullPath)) { SetStatus("The linked video was not found. Choose an existing export in Review.", true); tabs.SelectedIndex = 1; return; }
+            if (!File.Exists(fullPath)) { SetStatus("The linked video was not found. Choose an existing export in Review.", true); tabs.SelectedIndex = 2; return; }
             string extension = Path.GetExtension(document.ExportPath).ToLowerInvariant();
             if (!new string[] { ".mp4", ".mov", ".wmv", ".avi", ".mkv", ".m4v" }.Contains(extension)) { SetStatus("Choose a supported local video file to preview.", true); return; }
             Window player = new VideoPreviewWindow(fullPath, selected == null ? 0 : selected.StartSeconds.GetValueOrDefault()) { Owner = this };
@@ -664,7 +672,7 @@ namespace EditBuddy
             if (editorDirty && !CommitNote()) return;
             if (document.Notes.Count >= 1000) { SetStatus("This document has reached the 1000-note limit.", true); return; }
             ReviewNote note = new ReviewNote { Id = Guid.NewGuid().ToString("N"), Title = "New revision note", StartSeconds = 0, EndSeconds = 0, TimeLabel = "00:00.000", Observation = "", Suggestion = "Describe the change you want to compare.", Status = "suggested" };
-            note.Steps.Add(ReviewStore.ManualStep(note.Suggestion)); document.Notes.Add(note); selected = note; stepIndex = 0; Save(); RefreshNotes(); tabs.SelectedIndex = 1; noteTitle.Focus(); noteTitle.SelectAll();
+            note.Steps.Add(ReviewStore.ManualStep(note.Suggestion)); document.Notes.Add(note); selected = note; stepIndex = 0; Save(); RefreshNotes(); tabs.SelectedIndex = 2; noteTitle.Focus(); noteTitle.SelectAll();
         }
 
         private void SaveControlReport()

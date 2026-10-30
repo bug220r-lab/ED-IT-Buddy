@@ -1,0 +1,23 @@
+{
+  "format": "buddy-media-runtime-installation-v1",
+  "recorded_date": "2026-10-30",
+  "host": "MSI",
+  "status": "installed_not_preflighted",
+  "python": {
+    "version": "3.12.10",
+    "architecture": "x64",
+    "distribution": "Python embeddable",
+    "publisher_validated": true
+  },
+  "packages": {
+    "torch": "2.8.0+cu126",
+    "transformers": "4.57.1",
+    "Pillow": "11.3.0",
+    "numpy": "2.2.6"
+  },
+  "model": {
+    "repository": "google/siglip2-base-patch16-224",
+    "revision": "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2"
+  },
+  "evidence_scope": "The MSI runtime setup process reported exit 0. No GPU/model inference in the scheduled worker context, media-worker deployment, throughput benchmark, retrieval-quality acceptance, or complete release acceptance is established by this installation record."
+}

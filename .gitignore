@@ -15,5 +15,7 @@ artifacts/
 .env.*
 !.env.example
 portal/config.json
+assistant/config.json
+integrations/interlinked/candidate/
 node_modules/
 .pnpm-store/
