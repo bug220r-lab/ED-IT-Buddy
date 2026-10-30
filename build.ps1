@@ -33,7 +33,7 @@ foreach ($checkedPath in @($stagingDir, $backupDir, $outputDir)) {
 }
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 
-$references = @('System.dll', 'System.Core.dll', 'System.Web.Extensions.dll', 'System.Xaml.dll', 'WindowsBase.dll', 'PresentationCore.dll', 'PresentationFramework.dll', 'UIAutomationClient.dll', 'UIAutomationTypes.dll')
+$references = @('System.dll', 'System.Core.dll', 'System.Windows.Forms.dll', 'System.Drawing.dll', 'System.Web.Extensions.dll', 'System.Xaml.dll', 'WindowsBase.dll', 'PresentationCore.dll', 'PresentationFramework.dll', 'UIAutomationClient.dll', 'UIAutomationTypes.dll')
 $arguments = @('/nologo', '/platform:x64', '/optimize+', '/langversion:5', '/utf8output', '/codepage:65001')
 foreach ($reference in $references) {
     $referencePath = Join-Path $frameworkDir $reference

@@ -45,8 +45,8 @@ else: raise RuntimeError('Unknown test-only mutation')
 `;
 
 async function fixture(){
- fs.mkdirSync(path.join(repo,'.build'),{recursive:true});
- const root=fs.mkdtempSync(path.join(repo,'.build','assistant-rpc-'));
+ const fixtureParent=path.join(os.tmpdir(),'buddy-rpc-fixtures');fs.mkdirSync(fixtureParent,{recursive:true});
+ const root=fs.mkdtempSync(path.join(fixtureParent,'rpc-'));
  const source=path.join(root,'Footage café');fs.mkdirSync(source);fs.writeFileSync(path.join(source,'wide-stage.mp4'),'Synthetic source bytes remain untouched.');
  const state=path.join(root,'remote-state'),configFile=path.join(root,'worker.json');
  fs.writeFileSync(configFile,JSON.stringify({expected_host:'',source_allowlist:[source],model_revision:'synthetic-contract-only',downloader_root:path.join(root,'not-installed')}));
@@ -81,7 +81,7 @@ async function fixture(){
  async function close(){
   app.close();
   await Promise.all(children.map(child=>new Promise(resolve=>{if(child.exitCode!==null)return resolve();const timer=setTimeout(()=>{child.kill();resolve();},1500);child.once('exit',()=>{clearTimeout(timer);resolve();});})));
-  const relative=path.relative(path.join(repo,'.build'),root);assert.ok(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative));fs.rmSync(root,{recursive:true,force:true});
+  const relative=path.relative(fixtureParent,root);assert.ok(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative));fs.rmSync(root,{recursive:true,force:true});
  }
  return {app,remote,root,source,registered,spawns,mutate,close,published,setPublisherOffline(v){publisherOffline=v;}};
 }
@@ -90,7 +90,7 @@ test('real local RPC preserves Unicode roots, stable identity and scoped invento
  const f=await fixture();try{
   const snapshot=await f.app.handle('bootstrap');assert.equal(snapshot.sources[0].source_id,f.registered.root_id);assert.equal(snapshot.sources[0].path,f.source);assert.equal(snapshot.projects[0].project_id,'band-project');
   const inventory=await f.remote.request('inventory',{root_id:f.registered.root_id});assert.equal(inventory.files[0].relative_path,'wide-stage.mp4');
-  await assert.rejects(f.remote.request('register_source_root',{path:repo}),/source folder|configured|scope/i);
+  await assert.rejects(f.remote.request('register_source_root',{path:repo}),/source folder|configured|scope|linked|offline|unhydrated/i);
   assert.equal(f.spawns.length,1);assert.ok(f.spawns[0].args.includes('StrictHostKeyChecking=yes'));
  }finally{await f.close();}
 });

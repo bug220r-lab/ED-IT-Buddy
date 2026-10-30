@@ -21,7 +21,7 @@ from . import __version__
 FORMAT = "buddy-media-manifest-v1"
 ID = re.compile(r"^[a-zA-Z0-9_.-]{1,100}$")
 MEDIA = {".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v", ".webm", ".mpg", ".mpeg", ".mts", ".m2ts"}
-KINDS = {"download", "index", "search", "preview", "extract", "organize"}
+KINDS = {"download", "index", "search", "preview", "extract", "organize", "archive_chunk", "archive_commit"}
 TERMINAL = {"completed", "failed", "cancelled", "needs_review"}
 _MAX_JSON = 4 * 1024 * 1024
 
@@ -178,6 +178,10 @@ class Engine:
                    "submit_job": self.submit, "list_jobs": self.list_jobs, "get_job": self.get_job,
                    "pause_job": lambda p: self.control(p, "pause"), "resume_job": lambda p: self.control(p, "resume"),
                    "cancel_job": lambda p: self.control(p, "cancel"), "get_results": self.get_results}
+        from . import archive
+        methods.update({"begin_upload": lambda p: archive.begin(self, p), "confirm_upload_chunk": lambda p: archive.confirm(self, p),
+                        "finalize_upload": lambda p: archive.finalize(self, p), "list_inbox": lambda p: archive.listing(self, p),
+                        "assign_inbox": lambda p: archive.associate(self, p)})
         if method not in methods:
             raise BuddyError("unsupported", "Unknown media worker method.")
         return methods[method](params)
@@ -202,12 +206,12 @@ class Engine:
         model_path = self.config.get("model_path", "")
         fresh = bool(heartbeat and time.time() - heartbeat.get("observed_at", 0) < 20)
         return {"format": "buddy-media-capabilities-v1", "host": socket.gethostname(), "version": __version__,
-                "worker_online": fresh, "heartbeat": heartbeat,
+                "inbox_protocol": 1, "archive_configured": bool(self.config.get("archive_root")), "worker_online": fresh, "heartbeat": heartbeat,
                 "tools": {k: bool(p and Path(p).is_file()) for k, p in tools.items()},
                 "model_configured": bool(model_path and Path(model_path).is_dir()),
                 "model_revision": self.config.get("model_revision"),
                 "preflight": self.get_preflight(),
-                "job_kinds": sorted(KINDS), "methods": ["get_preflight", "register_source_root", "list_source_roots", "inventory", "submit_job", "list_jobs", "get_job", "pause_job", "resume_job", "cancel_job", "get_results"]}
+                "job_kinds": sorted(KINDS), "methods": ["begin_upload", "confirm_upload_chunk", "finalize_upload", "list_inbox", "assign_inbox", "get_preflight", "register_source_root", "list_source_roots", "inventory", "submit_job", "list_jobs", "get_job", "pause_job", "resume_job", "cancel_job", "get_results"]}
 
     def tools(self):
         root = Path(self.config.get("downloader_root", r"C:\Users\jlewi\Documents\VideoDownloader")) / "Tools"
@@ -217,6 +221,8 @@ class Engine:
         if set(params) - {"path", "label", "request_id"}:
             raise BuddyError("invalid_request", "Unknown source-root field.")
         p = ordinary(params.get("path", ""), directory=True)
+        if not self.archive_visible(p):
+            raise BuddyError("unsafe_path", "Only committed archive media may be a source.")
         allowed = self.config.get("source_allowlist", [])
         if not allowed or not any(self._contained(p, Path(a)) for a in allowed):
             raise BuddyError("scope_required", "Select a source folder inside an administrator-configured media parent.")
@@ -240,6 +246,14 @@ class Engine:
         with self.connect() as c:
             return {"roots": [dict(r) for r in c.execute("SELECT * FROM roots ORDER BY created")]}
 
+    def archive_visible(self, path, traversal=False):
+        archive = self.config.get("archive_root")
+        if not archive:
+            return True
+        base = Path(os.path.abspath(archive))
+        p = Path(os.path.abspath(path))
+        return not self._contained(p, base) or self._contained(p, base / "Media") or (traversal and p == base)
+
     def root(self, root_id):
         identifier(root_id, "source root")
         with self.connect() as c:
@@ -247,6 +261,8 @@ class Engine:
         if not row:
             raise BuddyError("unknown_root", "Source folder is not registered.")
         ordinary(row["path"], directory=True)
+        if not self.archive_visible(row["path"]):
+            raise BuddyError("unsafe_path", "Only committed archive media may be a source.")
         return dict(row)
 
     def media_files(self, root_id):
@@ -256,6 +272,8 @@ class Engine:
             folder = pending.pop()
             ordinary(folder, directory=True)
             for p in sorted(folder.iterdir(), key=lambda x: x.name.casefold()):
+                if not self.archive_visible(p, traversal=True):
+                    continue
                 try:
                     ordinary(p)
                 except BuddyError:
@@ -277,12 +295,19 @@ class Engine:
         return {"files": files, "truncated": False}
 
     def submit(self, params):
-        if set(params) - {"request_id", "kind", "project_id", "params"}:
+        if set(params) - {"request_id", "kind", "project_id", "params", "scope"}:
             raise BuddyError("invalid_request", "Unknown job field.")
         request_id = identifier(params.get("request_id"), "request ID")
         kind = params.get("kind")
         project_id = params.get("project_id")
-        if kind not in KINDS or not isinstance(project_id, str) or not project_id.strip() or len(project_id) > 300:
+        scope = params.get("scope", "project")
+        if scope == "library":
+            if project_id is not None or kind not in ("index", "search", "preview", "archive_chunk", "archive_commit"):
+                raise BuddyError("invalid_request", "Invalid library task scope.")
+            project_id = ""
+        elif scope != "project" or kind in ("archive_chunk", "archive_commit"):
+            raise BuddyError("invalid_request", "Invalid task scope.")
+        if kind not in KINDS or not isinstance(project_id, str) or (scope == "project" and not project_id.strip()) or len(project_id) > 300:
             raise BuddyError("invalid_request", "A supported kind and exact project identity are required.")
         args = params.get("params", {})
         self.validate_params(kind, args)
@@ -305,6 +330,12 @@ class Engine:
     def validate_params(self, kind, args):
         if not isinstance(args, dict):
             raise BuddyError("invalid_request", "Job parameters must be an object.")
+        if kind in ("archive_chunk", "archive_commit"):
+            from .archive import request_id
+            request_id(args)
+            if set(args) != ({"request_id", "index", "sha256", "bytes"} if kind == "archive_chunk" else {"request_id"}):
+                raise BuddyError("invalid_request", "Unexpected archive job fields.")
+            return
         fields = {"download": {"urls"}, "index": {"root_ids", "sample_seconds", "asset_ids", "start_seconds", "end_seconds"},
                   "search": {"query", "root_ids", "limit"}, "preview": {"asset_id", "start_seconds", "end_seconds"},
                   "extract": {"asset_id", "start_seconds", "end_seconds"}, "organize": {"asset_ids", "group_by", "tag"}}
@@ -360,6 +391,9 @@ class Engine:
         value = dict(row)
         for key in ("params", "progress", "result", "error"):
             value[key] = json.loads(value[key]) if value[key] else None
+        if value.get("project_id") == "":
+            value["project_id"] = None
+            value["scope"] = "library"
         value.pop("fingerprint", None)
         return value
 
@@ -473,6 +507,8 @@ class Engine:
                 continue
             try:
                 p = inside(alias["path"], self.root(alias["root_id"])["path"], directory=False)
+                if not self.archive_visible(p):
+                    continue
                 s = p.stat()
                 if (s.st_size, s.st_mtime_ns) == (alias["bytes"], alias["mtime_ns"]):
                     return p, dict(alias)
@@ -508,10 +544,16 @@ class Engine:
 
     def register_asset(self, path, root_id, check=None, metadata=None):
         p = inside(path, self.root(root_id)["path"], directory=False)
+        if not self.archive_visible(p):
+            raise BuddyError("unsafe_path", "Uncommitted archive files are not media sources.")
         sha, size, modified = digest(p, check)
         asset_id = "asset-" + sha
         with self.connect() as c:
             c.execute("INSERT OR IGNORE INTO assets VALUES(?,?,?,?)", (asset_id, sha, size, canonical(metadata or {})))
+            if metadata:
+                prior = c.execute("SELECT metadata FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+                merged = dict(json.loads(prior[0]) if prior else {}, **metadata)
+                c.execute("UPDATE assets SET metadata=? WHERE asset_id=?", (canonical(merged), asset_id))
             c.execute("INSERT OR REPLACE INTO aliases VALUES(?,?,?,?,?)", (root_id, str(p), asset_id, size, modified))
         return asset_id
 

@@ -99,7 +99,7 @@ def preflight(engine):
     if len(images) != 1 or len(images[0]) != len(vector) or not all(math.isfinite(x) for x in images[0]):
         raise BuddyError("preflight_failed", "The local model did not produce a compatible finite image embedding.")
     source_root = Path(__file__).parent
-    sources = {name: hashlib.sha256((source_root / name).read_bytes()).hexdigest() for name in ("core.py", "jobs.py", "vision.py", "worker.py")}
+    sources = {name: hashlib.sha256((source_root / name).read_bytes()).hexdigest() for name in ("core.py", "jobs.py", "vision.py", "worker.py", "archive.py")}
     return {"passed": True, "observed_at": time.time(), "elapsed_seconds": time.monotonic() - started, "dimensions": len(vector), "model_revision": engine.config.get("model_revision"), "host": socket.gethostname(), "process_id": os.getpid(), "python_executable": sys.executable, "python_version": sys.version, "source_sha256": sources, "runtime": model.facts() if hasattr(model, "facts") else {"test_encoder": True}}
 
 
@@ -155,15 +155,45 @@ def index_unit(engine, job):
     plan_file = directory / "index-plan.json"
     if plan_file.exists():
         plan = json.loads(plan_file.read_text("utf-8"))
+        # A valid old checkpoint can predate the archive's protected scope.
+        # Check processed entries too: their results may await publication.
+        if any(not engine.archive_visible(item["path"]) for item in plan["items"]):
+            raise BuddyError("unsafe_path", "Checkpoint includes uncommitted archive media; preserve it for review.")
     else:
         items = []
         selected = set(job["params"].get("asset_ids", []))
-        for root_id in job["params"]["root_ids"]:
-            for p in engine.media_files(root_id):
-                check()
-                if len(items) >= 100000:
-                    raise BuddyError("inventory_limit", "Selected sources exceed 100,000 media files. Select a smaller scope.")
-                items.append({"root_id": root_id, "path": str(p)})
+        if selected:
+            requested_roots = set(job["params"]["root_ids"])
+            for asset_id in sorted(selected):
+                matched = False
+                with engine.connect() as c:
+                    aliases = list(c.execute("SELECT * FROM aliases WHERE asset_id=? ORDER BY root_id,path", (asset_id,)))
+                for alias in aliases:
+                    if alias["root_id"] not in requested_roots:
+                        continue
+                    check()
+                    try:
+                        p = inside(alias["path"], engine.root(alias["root_id"])["path"], directory=False)
+                        if not engine.archive_visible(p):
+                            continue
+                        stat = p.stat()
+                        if (stat.st_size, stat.st_mtime_ns) != (alias["bytes"], alias["mtime_ns"]):
+                            continue
+                    except (BuddyError, OSError):
+                        continue
+                    if len(items) >= 100000:
+                        raise BuddyError("inventory_limit", "Selected aliases exceed 100,000 files. Select a smaller scope.")
+                    items.append({"root_id": alias["root_id"], "path": str(p), "selected_asset_id": asset_id})
+                    matched = True
+                if not matched:
+                    raise BuddyError("source_changed", "A selected asset is unavailable or outside the requested source roots.")
+        else:
+            for root_id in job["params"]["root_ids"]:
+                for p in engine.media_files(root_id):
+                    check()
+                    if len(items) >= 100000:
+                        raise BuddyError("inventory_limit", "Selected sources exceed 100,000 media files. Select a smaller scope.")
+                    items.append({"root_id": root_id, "path": str(p)})
         plan = {"items": items, "cursor": 0, "results": [], "failures": [], "skipped": [], "selected": sorted(selected)}
         atomic_json(plan_file, plan)
     plan.setdefault("skipped", [])
@@ -177,6 +207,8 @@ def index_unit(engine, job):
         item = plan["items"][plan["cursor"]]
         try:
             source = inside(item["path"], engine.root(item["root_id"])["path"], directory=False)
+            if not engine.archive_visible(source):
+                raise BuddyError("unsafe_path", "Uncommitted archive files cannot be indexed.")
             skipped = proxy_skip(engine, source, item["root_id"], profile, check) if full_source else None
             if skipped:
                 plan["skipped"].append(skipped)
@@ -187,6 +219,8 @@ def index_unit(engine, job):
             if "asset_id" not in item:
                 meta = probe(engine, job, source)
                 item["asset_id"] = engine.register_asset(source, item["root_id"], check, meta)
+                if item.get("selected_asset_id") and item["asset_id"] != item["selected_asset_id"]:
+                    raise BuddyError("source_changed", "Selected source content changed before indexing.")
                 item["metadata"] = meta
                 atomic_json(plan_file, plan)
             asset_id = item["asset_id"]
@@ -323,7 +357,10 @@ def search(engine, job):
         candidate.update({"start_seconds": max(0, candidate["timestamp_seconds"] - 3), "end_seconds": candidate["timestamp_seconds"] + 5, "thumbnail_sha256": sha, "thumbnail_bytes": size, "selection_reason": f"Local visual similarity to: {phrase}", "review_state": "suggested"})
         with engine.connect() as c:
             meta = c.execute("SELECT metadata FROM assets WHERE asset_id=?", (candidate["asset_id"],)).fetchone()
-        duration = json.loads(meta[0]).get("duration_seconds") if meta else None
+        metadata = json.loads(meta[0]) if meta else {}
+        if metadata.get("original_name"):
+            candidate["source_name"] = metadata["original_name"]
+        duration = metadata.get("duration_seconds")
         if duration:
             candidate["end_seconds"] = min(candidate["end_seconds"], duration)
         grouped.append(candidate)

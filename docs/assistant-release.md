@@ -1,3 +1,5 @@
+> Source 0.4.1 preview adds the [Media inbox](media-inbox.md). Its isolated checks and pending rollout gates are documented there. The installed/live acceptance record below remains the 0.3.1 baseline.
+
 # ED-IT Buddy 0.3.1 assistant preview
 
 ED-IT Buddy now provides a desktop Manager, durable task broker, MSI media worker, Codex chat, and an installed INTERLINKED companion. Live checks include the normal desktop connection and chat workflow, delivery during a managed MAGIX edit, and explicit verified save-back. The preview remains `release_verified: false` while the real full-corpus retrieval evaluation remains incomplete.

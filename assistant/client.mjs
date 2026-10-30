@@ -9,6 +9,7 @@ import {promisify} from 'node:util';
 import {TaskStore,atomicJson,ordinary,contained} from './state.mjs';
 import {Remote,fileHash} from './remote.mjs';
 import {Interlinked} from './interlinked.mjs';
+import {Inbox} from './inbox.mjs';
 import {CodexChat} from './codex.mjs';
 
 const KINDS=new Set(['download','index','search','preview','extract','organize']);
@@ -38,17 +39,20 @@ export class Assistant {
     this.store=new TaskStore(root);this.root=root;this.event=event;this.remote=remote||new Remote(config);this.interlinked=interlinked||new Interlinked(localAppData);this.connected=false;this.syncing=false;this.status={msi:'Disconnected',interlinked:'Disconnected',chat:'Not connected'};
     this.chat=(chatFactory||((o)=>new CodexChat(o)))({executable:config.codexExecutable||'codex.exe',cwd:path.join(root,'chat-workspace'),threads:this.store.data.threads,onThreads:()=>this.store.save(),onDelta:delta=>event({event:'chat_delta',delta}),tool:(op,p,project)=>this.chatTool(op,p,project)});
     this.timer=setInterval(()=>{if(this.connected)this.sync().catch(()=>{});},3000);this.timer.unref();
+    this.inbox=new Inbox(this);
     this.published=new Map();this.reporting=false;this.lastReportAttempt=0;
   }
   project(p=this.store.data.selected_project_id){return requireText(p,'selected INTERLINKED project',200);}
+  async currentProject(id){const r=await this.interlinked.projects();this.store.data.projects=(r.projects||[]).map(p=>({...p,project_id:p.original_id||p.project_id||p.id}));this.store.save();return this.knownProject(id);}
+  knownProject(id){if(!this.store.data.projects.some(p=>p.project_id===id))throw Error('Choose a known INTERLINKED project.');return id;}
   tasks(){return this.store.data.tasks.filter(t=>!this.store.data.selected_project_id||t.project_id===this.store.data.selected_project_id||t.scope==='library');}
-  snapshot(){return {projects:this.store.data.projects,sources:this.store.data.sources,tasks:this.tasks(),selected_project_id:this.store.data.selected_project_id,status:this.status};}
+  snapshot(){return {projects:this.store.data.projects,sources:this.store.data.sources,tasks:this.tasks(),selected_project_id:this.store.data.selected_project_id,status:this.status,watches:this.store.data.watches,inbox:this.store.data.inbox};}
   async reconnect(){
     this.connected=true;await Promise.allSettled([
       (async()=>{try{const r=await this.interlinked.projects();this.store.data.projects=(r.projects||[]).map(p=>({...p,project_id:p.original_id||p.project_id||p.id,name:p.name||p.title||p.original_id||p.id}));this.status.interlinked='Connected';}catch(e){this.status.interlinked=e.message;}})(),
       (async()=>{try{const c=await this.remote.request('get_capabilities');this.capabilities=c;this.status.msi=c.worker_online?'Connected':'MSI reachable; media worker is not running';const r=await this.remote.request('list_source_roots');this.store.data.sources=(Array.isArray(r)?r:r.roots||r.sources||[]).map(s=>({...s,source_id:s.root_id||s.source_id}));await this.discoverLibraryJobs();}catch(e){this.status.msi=e.message;}})(),
       (async()=>{try{const a=await this.chat.start();this.status.chat=a.signed_in?'Codex signed in':'Codex sign-in needed';}catch(e){this.status.chat=e.message;}})()
-    ]);this.store.save();await this.sync();return this.snapshot();
+    ]);this.store.save();try{await this.inbox.refresh();}catch(e){this.status.msi=e.message;}await this.sync();return this.snapshot();
   }
   async queue(kind,p,project){const task=this.store.add(kind,validateJob(kind,structuredClone(p)),this.project(project));if(this.connected)this.sync().catch(()=>{});this.event({event:'state_changed'});return task;}
   async discoverLibraryJobs(){
@@ -63,9 +67,10 @@ export class Assistant {
     if(this.syncing)return;this.syncing=true;
     try{
       for(const t of this.store.data.tasks){
+        if(['local_import','inbox_delivery'].includes(t.kind))continue;
         if(t.status==='queued'&&!t.remote_job_id){
           try{
-            const job=await this.remote.request('submit_job',{request_id:t.request_id,kind:t.kind,project_id:t.project_id,params:t.params});
+            const job=await this.remote.request('submit_job',{request_id:t.request_id,kind:t.kind,project_id:t.project_id,params:t.params,...(t.scope==='library'?{scope:'library'}:{})});
             const identity=job.job_id||job.job?.job_id;if(!identity)throw Error('MSI omitted job identity.');
             this.store.update(t,{remote_job_id:identity,status:job.status||job.job?.status||'queued',message:'Accepted by MSI'});
           }catch(e){this.store.update(t,{message:e.message});this.status.msi=e.message;break;}
@@ -83,7 +88,8 @@ export class Assistant {
       // File delivery has its own durable lifecycle. In particular, fetching a
       // manifest once must not prevent recovery after an offline/lost-ACK ingest.
       // Reconcile accepted deliveries even when MSI has subsequently disconnected.
-      for(const t of this.store.data.tasks)if(t.status==='completed'&&t.results?.manifest&&['download','extract','organize'].includes(t.kind))await this.reconcileDelivery(t);
+      for(const t of this.store.data.tasks)if(t.status==='completed'&&t.results?.manifest&&['download','extract','organize','inbox_delivery'].includes(t.kind))await this.reconcileDelivery(t);
+      try{await this.inbox.refresh();}catch(e){this.status.msi=e.message;}
       this.event({event:'state_changed'});
       this.publishReports();
     }finally{this.syncing=false;}
@@ -159,11 +165,18 @@ export class Assistant {
     while(Date.now()<deadline){await this.sync();if(t.status==='failed'||t.status==='cancelled')throw Error(t.message||'Preview failed.');if(t.results){const a=t.results.manifest?.assets?.[0];if(!a)throw Error('Preview has no verified video output.');const preview_path=await this.remote.copyArtifact(a,path.join(this.root,'previews'));return {task_id:t.task_id,preview_path};}await new Promise(r=>setTimeout(r,750));}
     return {task_id:t.task_id,status:t.status,message:'Preview remains queued. Open task results when it completes.'};
   }
-  summary(project){const tasks=this.store.data.tasks.filter(t=>t.project_id===project);return {format:'buddy-project-report-v1',project_id:project,observed_at:new Date().toISOString(),counts:tasks.reduce((a,t)=>(a[t.status]=(a[t.status]||0)+1,a),{}),library_work:this.store.data.tasks.filter(t=>t.scope==='library').map(t=>({task_id:t.task_id,kind:t.kind,status:t.status,progress:t.progress,message:t.message})),tasks:tasks.map(t=>({task_id:t.task_id,kind:t.kind,status:t.status,progress:t.progress,message:t.message,delivery_status:t.delivery_status||'not_delivered',outputs:t.delivery_receipt?.files||[],reviewed_by_user_at:t.reviewed_by_user_at||null}))};}
+  summary(project){
+    const tasks=this.store.data.tasks.filter(t=>t.project_id===project||t.kind==='local_import'&&t.project_ids?.includes(project));
+    const rows=tasks.map(t=>({task_id:t.task_id,kind:t.kind,status:t.status,progress:t.progress,message:t.message,
+      storage_status:t.storage_status||null,indexing_status:t.indexing_status||null,delivery_status:t.delivery_status||'not_delivered',
+      outputs:t.archive_receipt?[{path:t.archive_receipt.absolute_path,sha256:t.archive_receipt.sha256}]:(t.delivery_receipt?.files||[]),reviewed_by_user_at:t.reviewed_by_user_at||null}));
+    for(const r of this.store.data.inbox)if(r.project_ids?.includes(project)&&!tasks.some(t=>t.request_id===r.request_id))rows.push({task_id:'inbox-'+r.request_id,kind:'local_import',status:'completed',storage_status:'stored',indexing_status:r.indexing_status,delivery_status:'not_delivered',message:r.manifest.name,outputs:[{path:r.absolute_path,sha256:r.sha256}]});
+    return {format:'buddy-project-report-v1',project_id:project,observed_at:new Date().toISOString(),counts:rows.reduce((a,t)=>(a[t.status]=(a[t.status]||0)+1,a),{}),library_work:this.store.data.tasks.filter(t=>t.scope==='library').map(t=>({task_id:t.task_id,kind:t.kind,status:t.status,progress:t.progress,message:t.message})),tasks:rows};
+  }
   publishReports(){
     if(this.reporting||Date.now()-this.lastReportAttempt<15000)return;
     this.reporting=true;this.lastReportAttempt=Date.now();
-    (async()=>{for(const project of new Set(this.store.data.tasks.filter(t=>t.scope!=='library').map(t=>t.project_id))){const summary=this.summary(project);const stable={...summary};delete stable.observed_at;const fingerprint=createHash('sha256').update(JSON.stringify(stable)).digest('hex');if(this.published.get(project)===fingerprint)continue;try{await this.interlinked.report(project,summary);this.status.interlinked='Connected';this.published.set(project,fingerprint);}catch(e){this.status.interlinked=e.message;break;}}})().finally(()=>{this.reporting=false;});
+    (async()=>{for(const project of new Set([...this.store.data.tasks.flatMap(t=>t.scope==='library'?(t.project_ids||[]):[t.project_id]),...this.store.data.inbox.flatMap(r=>r.project_ids||[])].filter(Boolean))){const summary=this.summary(project);const stable={...summary};delete stable.observed_at;const fingerprint=createHash('sha256').update(JSON.stringify(stable)).digest('hex');if(this.published.get(project)===fingerprint)continue;try{await this.interlinked.report(project,summary);this.status.interlinked='Connected';this.published.set(project,fingerprint);}catch(e){this.status.interlinked=e.message;break;}}})().finally(()=>{this.reporting=false;});
   }
   async report(format='markdown',project=this.project()){const summary=this.summary(project);const markdown=['# ED-IT Buddy project report','',`Project: ${project}`,`Observed: ${summary.observed_at}`,'',...summary.tasks.map(t=>`- ${t.kind}: ${t.status}; delivery: ${t.delivery_status}${t.message?' — '+t.message:''}`)].join('\n');let publication;try{await this.interlinked.report(project,summary);this.status.interlinked='Connected';publication={status:'published'};}catch(e){publication={status:'failed',message:e.message};}return {summary,content:format==='json'?JSON.stringify(summary,null,2):markdown,markdown,publication};}
   async chatTool(op,p,project){
@@ -184,6 +197,15 @@ export class Assistant {
   async handle(method,p={}){
     if(!p||typeof p!=='object'||Array.isArray(p))throw Error('Expected object parameters.');
     switch(method){
+      case 'inbox_send':{if(!Array.isArray(p.paths)||p.paths.length<1||p.paths.length>100)throw Error('Select 1-100 videos.');if(p.project_id)this.knownProject(p.project_id);this.store.data.inbox_auto_connect=true;return {tasks:p.paths.map(file=>this.inbox.queue(file,p.project_id||null))};}
+      case 'inbox_watch':this.store.data.inbox_auto_connect=true;return this.inbox.addWatch(p.path,p.recursive===true);
+      case 'inbox_watch_action':this.inbox.watchAction(p.id,p.action);return this.snapshot();
+      case 'inbox_refresh':await this.inbox.refresh();return this.snapshot();
+      case 'inbox_assign':await this.inbox.assign(p.request_id,p.project_id);return this.snapshot();
+      case 'inbox_deliver':return this.inbox.deliver(p.request_id,p.project_id);
+      case 'inbox_retry_index':await this.inbox.retry(p.request_id);return this.snapshot();
+      case 'inbox_preview':{const r=this.inbox.receipt(p.request_id);const preview=await this.queueLibrary('preview',{asset_id:r.asset_id,start_seconds:0,end_seconds:10});return preview;}
+      case 'inbox_search':return this.queueLibrary('search',{query:requireText(p.query,'search query')});
       case 'bootstrap':return this.snapshot();
       case 'reconnect':return this.reconnect();
       case 'projects':return {projects:this.store.data.projects};
@@ -193,7 +215,7 @@ export class Assistant {
       case 'submit':return this.queue(p.kind,p.params);
       case 'search':return this.queue('search',{query:p.query,...(p.source_ids?.length?{root_ids:p.source_ids}:{})});
       case 'tasks':return {...this.snapshot()};
-      case 'task_action':{const t=this.find(p.task_id);if(p.action==='mark_reviewed')return this.store.update(t,{reviewed_by_user_at:new Date().toISOString()});if(!['pause','resume','cancel'].includes(p.action))throw Error('Unsupported task action.');if(!t.remote_job_id){if(p.action==='cancel')return this.store.update(t,{status:'cancelled'});throw Error('Task has not reached MSI.');}const r=await this.remote.request(p.action+'_job',{job_id:t.remote_job_id});this.store.update(t,{status:r.status||r.job?.status||t.status});await this.sync();return r;}
+      case 'task_action':{const t=this.find(p.task_id);if(t.kind==='local_import'&&['pause','resume','cancel'].includes(p.action)){this.store.update(t,{status:p.action==='resume'?'queued':p.action==='pause'?'paused':'cancelled',next_attempt:0});return t;}if(p.action==='mark_reviewed')return this.store.update(t,{reviewed_by_user_at:new Date().toISOString()});if(!['pause','resume','cancel'].includes(p.action))throw Error('Unsupported task action.');if(!t.remote_job_id){if(p.action==='cancel')return this.store.update(t,{status:'cancelled'});throw Error('Task has not reached MSI.');}const r=await this.remote.request(p.action+'_job',{job_id:t.remote_job_id});this.store.update(t,{status:r.status||r.job?.status||t.status});await this.sync();return r;}
       case 'results':return this.results(this.find(p.task_id));
       case 'preview':return this.preview(p);
       case 'extract':return this.queue('extract',p);
@@ -205,7 +227,8 @@ export class Assistant {
       default:throw Error('Unknown assistant operation: '+method);
     }
   }
-  close(){clearInterval(this.timer);this.remote.close();this.chat.close();this.store.close();}
+  async queueLibrary(kind,params){const t=this.store.add(kind,params,null);this.store.update(t,{scope:'library'});return t;}
+  close(){this.inbox.close();clearInterval(this.timer);this.remote.close();this.chat.close();this.store.close();}
 }
 
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

@@ -10,8 +10,45 @@ FILES=('repository/app/interlinked_gui.py','repository/app/interlinked_controlle
 def sha(data):return hashlib.sha256(data).hexdigest()
 def replace(text,old,new):
     assert text.count(old)==1,('Patch anchor changed',old[:100]);return text.replace(old,new,1)
+
+def prepare_v7(source,candidate,kit,module,report):
+    """Patch source and installed snapshots independently; preserve their unrelated differences."""
+    import re
+    module_hash=sha(module)
+    project='repository/work/magix-buddy/candidate/magix_projects.py'
+    targets=[('repository/app/interlinked_buddy.py','INTERLINKED-App/interlinked_buddy.py'),
+             (project,'magix_projects.py'),('repository/app/interlinked_gui.py','INTERLINKED-App/interlinked_gui.py'),
+             ('repository/app/web/app.js','INTERLINKED-App/web/app.js')]
+    originals={rel:(source/rel).read_bytes() for rel,_ in targets}
+    installed={rel:(kit/dest).read_bytes() for rel,dest in targets}
+    def patch(values):
+        out=dict(values);out['repository/app/interlinked_buddy.py']=module
+        text=values[project].decode('utf-8-sig')
+        text,n=re.subn(r"BUDDY_SHA='[a-f0-9]{64}'","BUDDY_SHA='"+module_hash+"'",text,count=1);assert n==1,'Current Buddy launcher module pin is missing.'
+        out[project]=text.encode('utf-8')
+        key='repository/app/interlinked_gui.py';text=values[key].decode('utf-8-sig')
+        assert "seal.get('format')=='interlinked-gui-checksums-v7'" in text,'Only the reviewed v7 GUI is supported by this narrow overlay.'
+        text,n=re.subn(r"MAGIX_SHA='[a-f0-9]{64}'","MAGIX_SHA='"+sha(out[project])+"'",text,count=1);assert n==1
+        out[key]=text.encode('utf-8')
+        key='repository/app/web/app.js';text=values[key].decode('utf-8-sig')
+        begin='// BEGIN BUDDY PROJECT REPORT';end='// END BUDDY PROJECT REPORT'
+        assert text.count(begin)==1 and text.count(end)==1,'Current report block boundaries changed.'
+        a=text.index(begin);b=text.index(end,a)+len(end)
+        out[key]=(text[:a]+report.rstrip()+text[b:]).encode('utf-8')
+        return out
+    changed=patch(originals);deployed=patch(installed);records=[]
+    for rel,dest in targets:
+        output=candidate/rel;output.parent.mkdir(parents=True,exist_ok=True);output.write_bytes(changed[rel])
+        installed_rel='installed/'+dest;output=candidate/installed_rel;output.parent.mkdir(parents=True,exist_ok=True);output.write_bytes(deployed[rel])
+        records.append(dict(path=rel,before_sha256=sha(originals[rel]),sha256=sha(changed[rel]),installed_before_sha256=sha(installed[rel]),installed_sha256=sha(deployed[rel]),installed_candidate_path=installed_rel))
+    return dict(format='interlinked-buddy-source-overlay-v2',source=str(source),files=records,
+                required_gui_seal=dict(format='interlinked-gui-checksums-v7',preserve_non_target_fields=True,frozen_base_unchanged=True),publication_deferred=True)
 def main():
     candidate=ROOT/'candidate';candidate.mkdir(exist_ok=True)
+    if "seal.get('format')=='interlinked-gui-checksums-v7'" in (SOURCE/'repository/app/interlinked_gui.py').read_text('utf-8-sig'):
+        overlay=prepare_v7(SOURCE,candidate,Path(r'C:\Users\Jude\Documents\MSI-Project-Library'),(ROOT/'interlinked_buddy.py').read_bytes(),(ROOT/'buddy_report_ui.js').read_text('utf-8'))
+        (ROOT/'source-overlay.json').write_text(json.dumps(overlay,indent=2)+'\n','utf-8')
+        print(json.dumps(dict(candidate=str(candidate),files=len(overlay['files']),format=overlay['format'],publication_deferred=True)));return
     records=[];data={}
     for rel in FILES:
         raw=(SOURCE/rel).read_bytes();data[rel]=raw.decode('utf-8-sig')

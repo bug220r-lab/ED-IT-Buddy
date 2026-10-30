@@ -6,7 +6,7 @@ The companion, export preview, and MSI portal share a yellow Matrix theme inspir
 
 **Product role:** Buddy manages the busy work around editing and feeds prepared assets and reports into INTERLINKED. INTERLINKED owns project identity, managed workspaces, and verified save-back. See the [integration design](docs/interlinked-integration.md), [downloader baseline](docs/video-downloader-discovery.md), and [current assistant verification](docs/assistant-release.md). The earlier [whiteboard and MAGIX investigation](docs/integration-feasibility.md) remains background research.
 
-**Current version: 0.3.1 preview.** The normal desktop workflow, MSI GPU inference, Codex streaming/tools/frame input, supplied-link downloading, partial real-footage search, preview, extraction, active-session asset delivery, and explicit INTERLINKED save-back have passed live checks. Current verification is tracked in the [assistant status](docs/assistant-release.md). The full-corpus real-footage benchmark is still pending, so the portable manifest retains `release_verified: false`.
+**Current source version: 0.4.1 preview.** The new [Media inbox](docs/media-inbox.md) adds local-to-MSI archive transfer and watched folders. It has isolated verification; production deployment and real-media acceptance are pending MSI connectivity. The previously installed 0.3.1 preview workflow remains the live baseline. The normal desktop workflow, MSI GPU inference, Codex streaming/tools/frame input, supplied-link downloading, partial real-footage search, preview, extraction, active-session asset delivery, and explicit INTERLINKED save-back have passed live checks. Current verification is tracked in the [assistant status](docs/assistant-release.md). The full-corpus real-footage benchmark is still pending, so the portable manifest retains `release_verified: false`.
 
 ## Manager start
 
@@ -71,7 +71,7 @@ node --test assistant/test/*.test.mjs
 
 These commands apply to the source workspace. Close Buddy yourself before rebuilding `bin`, or use `build.ps1 -OutputDirectory .build\my-build` for a separate build. The build uses the Windows .NET Framework C# compiler and WPF assemblies already on this PC. The source is compatible with C# 5 and uses no NuGet packages.
 
-Packaging creates a new `dist\ED-IT-Buddy-0.3.1-preview-<timestamp>` folder and ZIP, leaving `bin` untouched. It includes the executables, assistant broker, media-worker contract files, seed data, and documentation. Personal notes, task state, keys, media, models, and test fixtures are excluded. Its SHA-256 manifest, executable versions, worker target, and complete runtime allowlist are checked before publication. An existing package is never overwritten; choose a new `-PackageName` for another build.
+Packaging creates a new `dist\ED-IT-Buddy-0.4.1-preview-<timestamp>` folder and ZIP, leaving `bin` untouched. It includes the executables, assistant broker, media-worker contract files, seed data, and documentation. Personal notes, task state, keys, media, models, and test fixtures are excluded. Its SHA-256 manifest, executable versions, worker target, and complete runtime allowlist are checked before publication. An existing package is never overwritten; choose a new `-PackageName` for another build.
 
 `ED-IT Buddy.Probe.exe` is a private helper used by the companion. Launch the main `ED-IT Buddy.exe` application.
 

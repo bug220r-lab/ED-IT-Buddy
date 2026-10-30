@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {randomUUID,createHash} from 'node:crypto';
 import {ordinary,contained} from './state.mjs';
 
-const METHODS=new Set(['get_capabilities','get_preflight','register_source_root','list_source_roots','inventory','submit_job','list_jobs','get_job','pause_job','resume_job','cancel_job','get_results']);
+const METHODS=new Set(['get_capabilities','get_preflight','register_source_root','list_source_roots','inventory','submit_job','list_jobs','get_job','pause_job','resume_job','cancel_job','get_results','begin_upload','confirm_upload_chunk','finalize_upload','list_inbox','assign_inbox']);
 function executable(name){return process.platform==='win32'?path.join(process.env.WINDIR||'C:\\Windows','System32','OpenSSH',name+'.exe'):name;}
 export function sshArgs(c){
   for(const k of ['host','identityFile','knownHostsFile','hostKeyAlias'])if(typeof c.ssh[k]!=='string'||/[\r\n\0]/.test(c.ssh[k]))throw Error('Invalid SSH configuration.');
@@ -24,9 +24,19 @@ export class Remote {
   }
   fail(e,source=this.child){if(source!==this.child)return;const child=this.child;this.child=null;for(const p of this.pending.values()){clearTimeout(p.timer);p.reject(e);}this.pending.clear();if(child&&!child.killed)child.kill();}
   request(method,params={}){if(!METHODS.has(method))return Promise.reject(Error('Unsupported media operation.'));this.connect();return new Promise((resolve,reject)=>{const id=randomUUID();const timer=setTimeout(()=>{this.pending.delete(id);reject(Error('MSI response timed out. Reconcile the existing request before retrying.'));},20000);this.pending.set(id,{resolve,reject,timer});this.child.stdin.write(JSON.stringify({id,method,params})+'\n',e=>{if(e)this.fail(e);});});}
+  async uploadChunk(local,directory,index){
+    const archive=this.config.remote.archive||'C:\\Users\\jlewi\\Documents\\ED-IT Buddy Media Library';
+    const relative=path.win32.relative(archive,directory);
+    if(!/^Incoming[\\/][a-f0-9]{32}$/.test(relative)||!Number.isInteger(index)||index<0)throw Error('Invalid MSI upload destination.');
+    ordinary(local);if(fs.statSync(local).nlink!==1)throw Error('Unsafe transfer chunk.');
+    const dest=directory.replaceAll('\\','/')+'/chunk-'+String(index).padStart(6,'0')+'.part';
+    const quote=v=>'"'+v.replaceAll('\\','/').replaceAll('"','\\"')+'"';
+    await new Promise((resolve,reject)=>{const c=this.spawn(executable('sftp'),[...sshArgs(this.config),'-b','-',this.config.ssh.host],{shell:false,windowsHide:true,stdio:['pipe','ignore','pipe']});this.transfers??=new Set();this.transfers.add(c);let err='';c.stderr.on('data',b=>{if(err.length<2000)err+=b;});c.on('error',reject);c.stdin.on('error',reject);c.on('exit',code=>{this.transfers.delete(c);code===0?resolve():reject(Error('Upload failed: '+err));});c.stdin.end('put '+quote(local)+' '+quote(dest)+'\n');});
+  }
   async copyArtifact(asset,localRoot){
     const remote=asset.absolute_path||asset.path;const r=path.win32.relative(this.config.remote.state,remote||'');
-    if(!remote||!r||r.startsWith('..')||path.win32.isAbsolute(r)||/["\r\n\0]/.test(remote)||!/^[a-f0-9]{64}$/i.test(asset.sha256||''))throw Error('Unverified remote artifact.');
+    const archive=path.win32.join(this.config.remote.archive||'C:\\Users\\jlewi\\Documents\\ED-IT Buddy Media Library','Media',asset.sha256||'');const ar=path.win32.relative(archive,remote||'');const archived=asset.kind==='archived_video'&&/^video\.[a-z0-9]+$/.test(ar);
+    if(!remote||(!archived&&(!r||r.startsWith('..')||path.win32.isAbsolute(r)))||/["\r\n\0]/.test(remote)||!/^[a-f0-9]{64}$/i.test(asset.sha256||''))throw Error('Unverified remote artifact.');
     fs.mkdirSync(localRoot,{recursive:true});ordinary(localRoot,{directory:true});const ext=path.win32.extname(remote).toLowerCase();if(!/^\.[a-z0-9]{1,12}$/.test(ext))throw Error('Unsupported artifact extension.');
     const dest=contained(localRoot,path.join(localRoot,asset.sha256+ext));
     if(!fs.existsSync(dest)){
@@ -36,6 +46,6 @@ export class Remote {
     }
     if(await fileHash(dest)!==asset.sha256.toLowerCase())throw Error('Cached artifact changed.');return dest;
   }
-  close(){if(this.child)this.child.stdin.end();}
+  close(){for(const c of this.transfers||[])c.kill();if(this.child)this.child.stdin.end();}
 }
 export async function fileHash(file){ordinary(file);return await new Promise((resolve,reject)=>{const h=createHash('sha256');const s=fs.createReadStream(file);s.on('data',b=>h.update(b));s.on('end',()=>resolve(h.digest('hex')));s.on('error',reject);});}

@@ -56,3 +56,17 @@ Run `python -B -m unittest discover -s tests -p test_media_worker.py -v` from th
 Run `python -B -m unittest discover -s tests -p test_media_proxy_skip.py -v` for proxy skip regressions, including ambiguous/missing originals, stale metadata and content, profile mismatches, checkpoint recovery, source preservation, and separate skip receipts.
 
 Those fixtures use fake media tools and embeddings except the bounded cancellation subprocess. They are not a real six-hour decode, useful visual-search evaluation, new internet-download test, CUDA benchmark, or installed MSI acceptance result. Separate live checks have now established scheduled GPU inference, a supplied-URL download, partial band-footage indexing/search, preview/extraction, active-session delivery, and explicit verified INTERLINKED save-back. Full-corpus retrieval quality remains a separate gate in the [assistant verification record](../docs/assistant-release.md).
+
+## Media inbox (0.4.1 source)
+
+See [the inbox guide](../docs/media-inbox.md) for rollout gates and actual proof
+limits. `begin_upload`, `confirm_upload_chunk`, `finalize_upload`, `list_inbox`
+and `assign_inbox` are typed archive operations. Begin accepts a stable request ID
+and content/source manifest. Chunk confirmation and finalization return durable
+job identities; bytes transfer separately through native SFTP.
+
+`archive_root` must be an owned ordinary MSI directory outside worker state,
+cloud and managed caches. Scheduled preflight validates this root before model
+inference. Only committed Media is indexed. Library-scoped jobs explicitly use
+`scope: library` and null project identity; existing project-scoped callers retain
+their contract. Archive receipts/associations survive worker-database loss.

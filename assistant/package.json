@@ -1,1 +1,1 @@
-{"name":"edit-buddy-assistant","version":"0.3.1","private":true,"type":"module","engines":{"node":">=22.13"},"scripts":{"test":"node --test test/*.test.mjs"}}
+{"name":"edit-buddy-assistant","version":"0.4.1","private":true,"type":"module","engines":{"node":">=22.13"},"scripts":{"test":"node --test test/*.test.mjs"}}

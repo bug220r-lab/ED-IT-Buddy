@@ -34,6 +34,13 @@ namespace EditBuddy
         public string Label { get { string delivery = AssistantView.Text(Value, "delivery_status"); string reviewed = AssistantView.Text(Value, "reviewed_by_user_at"); string kind = AssistantView.Text(Value, "scope") == "library" ? "Library index" : AssistantView.Text(Value, "kind"); return kind + " · " + AssistantView.Text(Value, "status") + (delivery.Length > 0 ? " · delivery " + delivery : "") + (reviewed.Length > 0 ? " · reviewed by you" : "") + "\n" + AssistantView.Text(Value, "message"); } }
     }
 
+    internal sealed class AssistantInboxRow
+    {
+        internal Dictionary<string, object> Value;
+        public string Id { get { return AssistantView.Text(Value, "request_id"); } }
+        public string Label { get; set; }
+    }
+
     internal sealed class AssistantAssetRow
     {
         internal Dictionary<string, object> Value;
@@ -46,6 +53,10 @@ namespace EditBuddy
     // The manager is deliberately independent of MAGIX's legacy offline/focus controls.
     internal sealed class AssistantView : UserControl, IDisposable
     {
+        private readonly ListBox inboxList = new ListBox();
+        private readonly ListBox watchList = new ListBox();
+        private readonly CheckBox includeSubfolders = new CheckBox { Content = "Include subfolders", IsChecked = false };
+        private readonly CheckBox associateSelection = new CheckBox { Content = "Associate selected project", IsChecked = false };
         private readonly string root;
         private AssistantProcessClient client;
         private readonly DispatcherTimer timer = new DispatcherTimer();
@@ -68,6 +79,7 @@ namespace EditBuddy
         private readonly ComboBox organization = new ComboBox();
         private readonly TextBox organizationTag = new TextBox();
         private readonly ProgressBar taskProgress = new ProgressBar();
+        private readonly IndexProgressPanel indexProgress = new IndexProgressPanel();
         private readonly Button connectButton;
         private readonly Button sendButton;
         private bool rendering;
@@ -104,13 +116,14 @@ namespace EditBuddy
             TextBlock projectCaption = Description("INTERLINKED project"); projectCaption.Width = 190; projectCaption.VerticalAlignment = VerticalAlignment.Center; projectLine.Children.Add(projectCaption);
             projects.DisplayMemberPath = "Label"; projects.MinWidth = 200; projects.Margin = new Thickness(0, 0, 8, 0); projects.SelectionChanged += ProjectChanged;
             AutomationProperties.SetName(projects, "INTERLINKED project for Buddy tasks"); AutomationProperties.SetAutomationId(projects, "AssistantProject"); projectLine.Children.Add(projects);
+            heading.Children.Add(indexProgress);
 
             Grid columns = new Grid(); Grid.SetRow(columns, 1); layout.Children.Add(columns);
             columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star), MinWidth = 360 });
             columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
             columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star), MinWidth = 310 });
             TabControl work = new TabControl { BorderThickness = new Thickness(0) }; columns.Children.Add(work);
-            work.Items.Add(WorkTab("Media", BuildMedia())); work.Items.Add(WorkTab("Tasks", BuildTasks())); work.Items.Add(WorkTab("Report", BuildReport()));
+            work.Items.Add(WorkTab("Media inbox", BuildInbox())); work.Items.Add(WorkTab("Media", BuildMedia())); work.Items.Add(WorkTab("Tasks", BuildTasks())); work.Items.Add(WorkTab("Report", BuildReport()));
 
             Grid chat = new Grid(); Grid.SetColumn(chat, 2); columns.Children.Add(chat);
             chat.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -137,6 +150,116 @@ namespace EditBuddy
             message.Text = "Connect explicitly to start the assistant. Existing MAGIX review controls remain in the other tabs."; Grid.SetRow(message, 2); layout.Children.Add(message);
             timer.Interval = TimeSpan.FromSeconds(3); timer.Tick += async delegate { if (client != null && client.IsRunning && !refreshing && !disposed) await RefreshTasks(false); };
             RenderSources(new List<Dictionary<string, object>>());
+        }
+
+        private UIElement BuildInbox()
+        {
+            StackPanel panel = new StackPanel(); panel.Children.Add(Heading("Media inbox", 17));
+            panel.Children.Add(Description("Keep a verified copy on MSI and automatically index it. Local originals stay in place. A project is optional."));
+            WrapPanel actions = new WrapPanel(); panel.Children.Add(actions);
+            actions.Children.Add(Button("Send videos to MSI…", SendLocalVideos, true));
+            actions.Children.Add(Button("Watch folder…", WatchLocalFolder, false));
+            panel.Children.Add(associateSelection); panel.Children.Add(includeSubfolders);
+            panel.Children.Add(Description("Watches collect new or changed videos only. Monitoring runs while Buddy is open or minimized. Queued inbox videos reconnect to MSI while Buddy runs."));
+            watchList.ItemTemplate = WrappedInboxLabel(); watchList.HorizontalContentAlignment = HorizontalAlignment.Stretch; ScrollViewer.SetHorizontalScrollBarVisibility(watchList, ScrollBarVisibility.Disabled); watchList.Height = 65; panel.Children.Add(watchList);
+            WrapPanel watches = new WrapPanel(); panel.Children.Add(watches);
+            watches.Children.Add(Button("Pause watch", delegate { return WatchAction("pause"); }, false));
+            watches.Children.Add(Button("Resume watch", delegate { return WatchAction("resume"); }, false));
+            watches.Children.Add(Button("Remove watch", delegate { return WatchAction("remove"); }, false));
+            inboxList.ItemTemplate = WrappedInboxLabel(); inboxList.HorizontalContentAlignment = HorizontalAlignment.Stretch; ScrollViewer.SetHorizontalScrollBarVisibility(inboxList, ScrollBarVisibility.Disabled); inboxList.Height = 195; AutomationProperties.SetName(inboxList, "Local videos and verified MSI inbox copies"); panel.Children.Add(inboxList);
+            WrapPanel items = new WrapPanel(); panel.Children.Add(items);
+            items.Children.Add(Button("Assign to project", delegate { return InboxAction("inbox_assign"); }, false));
+            items.Children.Add(Button("Add to project", delegate { return InboxAction("inbox_deliver"); }, true));
+            items.Children.Add(Button("Retry indexing", delegate { return InboxAction("inbox_retry_index"); }, false));
+            items.Children.Add(Button("Preview", delegate { return InboxAction("inbox_preview"); }, false));
+            foreach (string action in new[] { "pause", "resume", "cancel" }) { string captured = action; items.Children.Add(Button(char.ToUpper(action[0]) + action.Substring(1) + " transfer", delegate { return InboxTransferAction(captured); }, false)); }
+            panel.Children.Add(Description("Assignment links a project. Add to project delivers through INTERLINKED; project Save + verify remains explicit. Search the inbox with Find a visual moment on the Media tab."));
+            return panel;
+        }
+
+        internal Task StartMonitoring() { return StartLocalInbox(); }
+
+        private async Task StartLocalInbox()
+        {
+            if (client == null || !client.IsRunning)
+            {
+                if (client != null) client.Dispose();
+                client = new AssistantProcessClient(root); client.Notification += OnNotification;
+                client.Disconnected += delegate(string detail) { Dispatch(delegate { timer.Stop(); indexProgress.MarkDisconnected(detail); serviceState.Text = "Task broker disconnected"; Show(detail, true); }); };
+            }
+            await Bootstrap(); timer.Start();
+        }
+
+        private static DataTemplate WrappedInboxLabel()
+        {
+            return (DataTemplate)XamlReader.Parse("<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><TextBlock Text='{Binding Label}' TextWrapping='Wrap' Margin='4'/></DataTemplate>");
+        }
+
+        private async Task SendLocalVideos()
+        {
+            OpenFileDialog picker = new OpenFileDialog { Title = "Send videos to MSI", Multiselect = true, Filter = "Videos|*.mp4;*.mov;*.mkv;*.avi;*.wmv;*.m4v;*.webm;*.mpg;*.mpeg;*.mts;*.m2ts" };
+            if (picker.ShowDialog() != true) return;
+            await StartLocalInbox(); if (associateSelection.IsChecked == true) RequireProject();
+            await client.RequestAsync("inbox_send", new { paths = picker.FileNames, project_id = associateSelection.IsChecked == true ? projectId : null });
+            await RefreshTasks(false); Show("Videos queued. Inbox transfers will connect to MSI automatically.", false);
+        }
+
+        private async Task WatchLocalFolder()
+        {
+            using (System.Windows.Forms.FolderBrowserDialog picker = new System.Windows.Forms.FolderBrowserDialog { Description = "Watch new or changed videos in this folder", ShowNewFolderButton = false })
+            {
+                if (picker.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+                await StartLocalInbox(); await client.RequestAsync("inbox_watch", new { path = picker.SelectedPath, recursive = includeSubfolders.IsChecked == true }, 120000);
+            }
+            await RefreshTasks(false); Show("Watch enabled. Existing videos were skipped.", false);
+        }
+
+        private async Task WatchAction(string action)
+        {
+            AssistantChoice selected = watchList.SelectedItem as AssistantChoice; if (selected == null) throw new InvalidOperationException("Select a watched folder.");
+            await RequireClient().RequestAsync("inbox_watch_action", new { id = selected.Id, action = action }); await RefreshTasks(false);
+        }
+
+        private async Task InboxTransferAction(string action)
+        {
+            AssistantInboxRow selected = inboxList.SelectedItem as AssistantInboxRow; if (selected == null || String.IsNullOrEmpty(Text(selected.Value, "task_id"))) throw new InvalidOperationException("Select a local transfer task.");
+            await RequireClient().RequestAsync("task_action", new { task_id = Text(selected.Value, "task_id"), action = action }); await RefreshTasks(false);
+        }
+
+        private async Task InboxAction(string method)
+        {
+            AssistantInboxRow selected = inboxList.SelectedItem as AssistantInboxRow; if (selected == null) throw new InvalidOperationException("Select a stored inbox video.");
+            if (method == "inbox_assign" || method == "inbox_deliver") RequireProject();
+            object response = await RequireClient().RequestAsync(method, new { request_id = selected.Id, project_id = projectId }, 120000);
+            await RefreshTasks(false); if (method == "inbox_preview") SelectReturnedTask(response);
+            Show("Inbox request recorded. Storage, indexing and project delivery have separate receipts.", false);
+        }
+
+        private void RenderInbox(Dictionary<string, object> data)
+        {
+            AssistantInboxRow prior = inboxList.SelectedItem as AssistantInboxRow;
+            List<AssistantInboxRow> rows = new List<AssistantInboxRow>();
+            List<Dictionary<string, object>> tasks = List(data, "tasks").Where(delegate(Dictionary<string, object> t) { return Text(t, "kind") == "local_import"; }).ToList();
+            foreach (Dictionary<string, object> t in tasks)
+            {
+                Dictionary<string, object> receipt = t.ContainsKey("archive_receipt") ? Map(t["archive_receipt"]) : new Dictionary<string, object>();
+                rows.Add(new AssistantInboxRow { Value = t, Label = Text(t, "name") + " · " + Text(t, "status") + " · " + Text(t, "storage_status") + " · " + Text(t, "indexing_status") + " · " + (Number(t, "progress", 0) * 100).ToString("0") + "%\n" + Text(t, "message") + " " + Text(t, "indexing_error") + " " + Text(t, "association_error") + "\n" + Text(receipt, "absolute_path") + "\nProjects: " + ProjectLabels(t) + "\nProject delivery: " + Text(t, "delivery_summary") });
+            }
+            foreach (Dictionary<string, object> r in List(data, "inbox")) if (!tasks.Any(delegate(Dictionary<string, object> t) { return Text(t, "request_id") == Text(r, "request_id"); }))
+            {
+                Dictionary<string, object> manifest = r.ContainsKey("manifest") ? Map(r["manifest"]) : new Dictionary<string, object>();
+                rows.Add(new AssistantInboxRow { Value = r, Label = Text(manifest, "name") + " · Stored on MSI · " + Text(r, "indexing_status") + "\n" + Text(r, "absolute_path") + "\nProjects: " + ProjectLabels(r) + "\nProject delivery: " + Text(r, "delivery_summary") });
+            }
+            inboxList.ItemsSource = rows; if (prior != null) inboxList.SelectedItem = rows.FirstOrDefault(delegate(AssistantInboxRow r) { return r.Id == prior.Id; });
+            AssistantChoice before = watchList.SelectedItem as AssistantChoice;
+            List<AssistantChoice> watches = List(data, "watches").Select(delegate(Dictionary<string, object> w) { return new AssistantChoice { Id = Text(w, "id"), Label = Text(w, "path") + (w.ContainsKey("paused") && Convert.ToBoolean(w["paused"]) ? " · paused" : " · watching") + " " + Text(w, "error") }; }).ToList();
+            watchList.ItemsSource = watches; if (before != null) watchList.SelectedItem = watches.FirstOrDefault(delegate(AssistantChoice w) { return w.Id == before.Id; });
+        }
+
+        private static string ProjectLabels(Dictionary<string, object> data)
+        {
+            object ids; if (!data.TryGetValue("project_ids", out ids) || !(ids is IEnumerable)) return "unassigned";
+            List<string> names = new List<string>(); foreach (object id in (IEnumerable)ids) names.Add(Convert.ToString(id)); return names.Count == 0 ? "unassigned" : String.Join(", ", names);
         }
 
         private UIElement BuildMedia()
@@ -214,7 +337,7 @@ namespace EditBuddy
                 {
                     if (client != null) client.Dispose();
                     client = new AssistantProcessClient(root); client.Notification += OnNotification;
-                    client.Disconnected += delegate(string detail) { Dispatch(delegate { timer.Stop(); serviceState.Text = "Task broker disconnected"; Show(detail, true); }); };
+                    client.Disconnected += delegate(string detail) { Dispatch(delegate { timer.Stop(); indexProgress.MarkDisconnected(detail); serviceState.Text = "Task broker disconnected"; Show(detail, true); }); };
                 }
                 // Bootstrap provides the local queue even if the remote connection is unavailable.
                 await Bootstrap(); timer.Start();
@@ -228,8 +351,9 @@ namespace EditBuddy
         private async Task Bootstrap()
         {
             Dictionary<string, object> state = Map(await RequireClient().RequestAsync("bootstrap", new { }));
+            indexProgress.Update(state);
             string selected = Text(state, "selected_project_id"); if (!String.IsNullOrEmpty(selected)) projectId = selected;
-            RenderProjects(List(state, "projects")); RenderSources(List(state, "sources")); RenderTasks(List(state, "tasks"));
+            RenderInbox(state); RenderProjects(List(state, "projects")); RenderSources(List(state, "sources")); RenderTasks(List(state, "tasks"));
             if (taskList.SelectedItem == null)
             {
                 AssistantTaskRow recentSearch = taskList.Items.Cast<AssistantTaskRow>().FirstOrDefault(delegate(AssistantTaskRow row) { return Text(row.Value, "kind") == "search"; });
@@ -292,10 +416,10 @@ namespace EditBuddy
 
         private async Task Search()
         {
-            RequireProject(); if (String.IsNullOrWhiteSpace(searchQuery.Text)) throw new InvalidOperationException("Describe the visual moment you want to find.");
+            if (String.IsNullOrWhiteSpace(searchQuery.Text)) throw new InvalidOperationException("Describe the visual moment you want to find.");
             AssistantChoice source = sources.SelectedItem as AssistantChoice;
             string[] ids = source == null || String.IsNullOrEmpty(source.Id) ? new string[0] : new[] { source.Id };
-            object response = await RequireClient().RequestAsync("search", new { query = searchQuery.Text.Trim(), source_ids = ids });
+            object response = String.IsNullOrEmpty(projectId) ? await RequireClient().RequestAsync("inbox_search", new { query = searchQuery.Text.Trim() }) : await RequireClient().RequestAsync("search", new { query = searchQuery.Text.Trim(), source_ids = ids });
             List<Dictionary<string, object>> found = ResultItems(response); if (found.Count > 0) RenderAssets(found);
             await RefreshTasks(false); SelectReturnedTask(response); Show("Search requested. Results appear when MSI completes the task.", false);
         }
@@ -308,7 +432,8 @@ namespace EditBuddy
                 AssistantTaskRow before = taskList.SelectedItem as AssistantTaskRow;
                 string previousStatus = before == null ? "" : Text(before.Value, "status");
                 Dictionary<string, object> data = Map(await RequireClient().RequestAsync("tasks", new { }, 20000));
-                RenderTasks(List(data, "tasks")); object status; if (data.TryGetValue("status", out status)) RenderServiceState(Map(status));
+                indexProgress.Update(data);
+                RenderInbox(data); RenderTasks(List(data, "tasks")); object status; if (data.TryGetValue("status", out status)) RenderServiceState(Map(status));
                 AssistantTaskRow after = taskList.SelectedItem as AssistantTaskRow;
                 if (after != null && (Text(after.Value, "status") != previousStatus ||
                     (Text(after.Value, "status") == "completed" && loadedResultsTaskId != after.Id && loadingResultsTaskId != after.Id))) await LoadTask();
@@ -597,7 +722,7 @@ namespace EditBuddy
         { List<Dictionary<string, object>> rows = ObjectList(value); if (rows.Count > 0) return rows; Dictionary<string, object> map = Map(value); foreach (string key in new[] { "results", "assets", "items", "outputs" }) { rows = List(map, key); if (rows.Count > 0) return rows; } object result; if (map.TryGetValue("result", out result)) return ResultItems(result); return rows; }
 
         public void Dispose()
-        { if (disposed) return; disposed = true; timer.Stop(); ++resultGeneration; if (client != null) client.Dispose(); }
+        { if (disposed) return; disposed = true; timer.Stop(); indexProgress.Dispose(); ++resultGeneration; if (client != null) client.Dispose(); }
     }
 
     internal sealed class AssistantPreviewWindow : Window

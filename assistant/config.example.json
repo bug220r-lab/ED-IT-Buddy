@@ -1,5 +1,5 @@
 {
   "ssh": {"host":"jlewi@192.168.247.1","identityFile":"C:\\Users\\Jude\\.ssh\\edit_buddy_msi_ed25519","knownHostsFile":"C:\\Users\\Jude\\.ssh\\known_hosts","hostKeyAlias":"msi"},
-  "remote": {"python":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\runtime\\python.exe","rpc":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\v0.3.2\\media_worker\\rpc.py","state":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\state","config":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\config.json"},
+  "remote": {"python":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\runtime\\python.exe","rpc":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\v0.4.1\\media_worker\\rpc.py","state":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\state","config":"C:\\Users\\jlewi\\AppData\\Local\\ED-IT-Buddy-Media\\v0.4.1\\config.json"},
   "codexExecutable":"codex.exe"
 }

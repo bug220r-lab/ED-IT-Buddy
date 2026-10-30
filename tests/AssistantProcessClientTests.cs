@@ -61,6 +61,15 @@ internal static class AssistantProcessClientTests
             RenderTargetBitmap image = new RenderTargetBitmap(1120, 720, 96, 96, PixelFormats.Pbgra32); image.Render(view);
             PngBitmapEncoder encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
             using (FileStream file = File.Create(Path.Combine(root, "manager-preview.png"))) encoder.Save(file);
+            Check(((CheckBox)typeof(AssistantView).GetField("includeSubfolders", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(view)).IsChecked == false, "watch subfolders are opt-in");
+            Check(((CheckBox)typeof(AssistantView).GetField("associateSelection", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(view)).IsChecked == false, "local import requires no project by default");
+            Dictionary<string, object> imported = new Dictionary<string, object> { { "kind", "local_import" }, { "task_id", "local-fixture" }, { "request_id", "fixture-upload" }, { "name", "Band export.mp4" }, { "status", "completed" }, { "storage_status", "stored" }, { "indexing_status", "failed" }, { "message", "Stored on MSI; indexing needs attention" }, { "delivery_summary", "Not delivered" }, { "project_ids", new object[0] } };
+            typeof(AssistantView).GetMethod("RenderInbox", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(view, new object[] { new Dictionary<string, object> { { "tasks", new object[] { imported } }, { "inbox", new object[0] }, { "watches", new object[0] } } });
+            ListBox inbox = (ListBox)typeof(AssistantView).GetField("inboxList", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(view);
+            Check(inbox.Items.Count == 1 && ((AssistantInboxRow)inbox.Items[0]).Label.Contains("stored") && ((AssistantInboxRow)inbox.Items[0]).Label.Contains("failed"), "storage survives indexing failure in inbox display");
+            Check(((AssistantInboxRow)inbox.Items[0]).Label.Contains("Not delivered"), "inbox does not infer project delivery from storage");
+            view.UpdateLayout(); image = new RenderTargetBitmap(1120, 720, 96, 96, PixelFormats.Pbgra32); image.Render(view); encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+            using (FileStream file = File.Create(Path.Combine(root, "manager-inbox-preview.png"))) encoder.Save(file);
             window.Content = null; window.Close();
         }
     }

@@ -195,6 +195,7 @@ namespace EditBuddy
             RefreshNotes(); RenderConnection();
             Loaded += async delegate
             {
+                await assistant.StartMonitoring();
                 if (!workOffline && tabs.SelectedIndex != 0) await RefreshConnection();
                 else SetStatus("Offline mode: review notes and local video are available. Connect explicitly when you want MAGIX access.", false);
                 if (loadWarning != null) SetStatus(loadWarning, true);
@@ -204,7 +205,12 @@ namespace EditBuddy
                 if (busy) { e.Cancel = true; SetStatus("Wait for the current operation to finish before closing.", false); return; }
                 if (editorDirty && !CommitNote()) e.Cancel = true;
             };
-            Closed += delegate { assistant.Dispose(); };
+            System.Windows.Forms.NotifyIcon tray = new System.Windows.Forms.NotifyIcon();
+            tray.Icon = System.Drawing.Icon.ExtractAssociatedIcon(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            tray.Text = "ED-IT Buddy · monitoring while running";
+            tray.DoubleClick += delegate { Show(); WindowState = WindowState.Normal; Activate(); };
+            StateChanged += delegate { tray.Visible = WindowState == WindowState.Minimized; };
+            Closed += delegate { tray.Dispose(); assistant.Dispose(); };
         }
 
         public static string FindRoot()

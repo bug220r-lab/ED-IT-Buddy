@@ -227,6 +227,25 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(result['counts']['prepared'],1);self.assertEqual(result['counts']['delivered'],0);self.assertEqual(result['counts']['attention'],1)
         self.assertEqual(result['tasks'][0]['message'],task['message']);self.assertEqual(result['tasks'][0]['outputs'],[dict(path='media/clip.mp4',sha256='a'*64)])
         self.assertNotIn('physical_path',json.dumps(result));self.assertNotIn('token',result)
+    def test_inbox_storage_searchability_and_delivery_remain_separate(self):
+        service = self.controller.buddy
+        task = dict(task_id='inbox-1',kind='local_import',status='completed',storage_status='stored',indexing_status='failed',delivery_status='not_delivered')
+        service.report(dict(project_id='demo-project-1',summary=dict(tasks=[task])))
+        result = service.gui_report('demo-project-1')
+        self.assertEqual(result['counts']['stored'],1)
+        self.assertEqual(result['counts']['prepared'],0)
+        self.assertEqual(result['counts']['searchable'],0)
+        self.assertEqual(result['counts']['delivered'],0)
+        self.assertEqual(result['counts']['attention'],1)
+        self.assertEqual(result['tasks'][0]['storage_status'],'stored')
+        self.assertEqual(result['tasks'][0]['indexing_status'],'failed')
+        task['indexing_status']='searchable'
+        service.report(dict(project_id='demo-project-1',summary=dict(tasks=[task])))
+        result=service.gui_report('demo-project-1')
+        self.assertEqual(result['counts']['searchable'],1)
+        self.assertEqual(result['counts']['delivered'],0)
+        self.assertEqual(result['counts']['attention'],0)
+
     def test_gui_report_maps_ui_identity_to_stable_original(self):
         self.controller.catalog=lambda:dict(projects=[dict(id='opaque-ui-id',originalId='stable-original',name='Synthetic general project')])
         status,_=self.request('/api/buddy/report','POST',dict(project_id='stable-original',summary=dict(tasks=[])));self.assertEqual(status,200)

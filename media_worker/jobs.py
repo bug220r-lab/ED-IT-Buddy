@@ -113,9 +113,11 @@ def tool(engine, job, name, args, *, stdout_path=None, timeout=3600):
             return 0
         finally:
             if process and process.poll() is None:
-                if lifetime:
-                    lifetime.close()
-                process.kill()
+                if lifetime and lifetime.handle:
+                    lifetime.close()  # KILL_ON_JOB_CLOSE terminates the owned tree.
+                else:
+                    process.kill()
+                # Always reap before closing logs or reporting a checkpoint.
                 process.wait(timeout=10)
             if lifetime:
                 lifetime.close()
@@ -333,6 +335,9 @@ def organize(engine, job):
 
 
 def execute(engine, job):
+    if job["kind"] in ("archive_chunk", "archive_commit"):
+        from .archive import execute as archive_execute
+        return archive_execute(engine, job)
     kind = job["kind"]
     if kind == "download":
         return download(engine, job)

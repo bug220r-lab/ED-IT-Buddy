@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import uuid
+import re
 
 ROOT=Path(__file__).resolve().parent
 WORKSPACE=ROOT.parents[1]
@@ -50,9 +51,13 @@ def baseline():
     guards.ordinary(SOURCE);guards.ordinary(KIT)
     need(file_sha(KIT/'magix_workspace.py')==BASE_SHA,'Frozen installed base changed.')
     overlay=json.loads((ROOT/'source-overlay.json').read_text('utf-8-sig'))
-    need(overlay['format']=='interlinked-buddy-source-overlay-v1' and Path(overlay['source'])==SOURCE,'Unknown source overlay.')
+    need(overlay['format'] in ('interlinked-buddy-source-overlay-v1','interlinked-buddy-source-overlay-v2') and Path(overlay['source'])==SOURCE,'Unknown source overlay.')
     for row in overlay['files']:
         path=guards.ordinary(ROOT/'candidate'/row['path']);need(file_sha(path)==row['sha256'],'Candidate source differs: '+row['path'])
+        if overlay['format']=='interlinked-buddy-source-overlay-v2':
+            rel=row.get('installed_candidate_path','')
+            need(rel.startswith('installed/') and not Path(rel).is_absolute() and '..' not in Path(rel).parts,'Invalid installed candidate path.')
+            need(file_sha(ROOT/'candidate'/rel)==row.get('installed_sha256'),'Installed candidate differs: '+rel)
     return overlay
 def create_receipt(mode):
     parent=WORKSPACE/'.build';guards.ordinary(parent);folder=parent/('interlinked-buddy-'+mode+'-'+dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+uuid.uuid4().hex[:8]);folder.mkdir();return folder
@@ -88,6 +93,9 @@ def merge_source(overlay,receipt):
     guards.write(receipt/'receipt.json',dict(format='interlinked-buddy-publication-v1',mode='source',status='MERGED',utc=utc(),files=records,current_distribution_sha256=file_sha(manifest_path),project_files_written=False))
     subprocess.run([sys.executable,'-I','-B',str(SOURCE/'repository/verify_source_snapshot.py')],check=True)
 def kit_targets(overlay):
+    if overlay.get('format')=='interlinked-buddy-source-overlay-v2':
+        allowed={'repository/app/interlinked_buddy.py','repository/work/magix-buddy/candidate/magix_projects.py','repository/app/interlinked_gui.py','repository/app/web/app.js'}
+        need(len(overlay.get('files',[]))==4 and {r['path'] for r in overlay['files']}==allowed,'The v7 inbox overlay must contain exactly its four reviewed targets.')
     result=[]
     for row in overlay['files']:
         rel=row['path']
@@ -96,36 +104,73 @@ def kit_targets(overlay):
         else:raise ValueError('Unexpected installed target: '+rel)
         result.append((row,dest))
     return result
+
+def process_names():
+    script="$ErrorActionPreference='Stop';[Console]::OutputEncoding=New-Object Text.UTF8Encoding($false);$names=@(Get-Process -ErrorAction Stop|Select-Object -ExpandProperty ProcessName);@{format='buddy-publication-processes-v1';names=$names}|ConvertTo-Json -Compress"
+    try:
+        result=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',script],capture_output=True,text=True,encoding='utf-8',errors='strict',timeout=10)
+    except (subprocess.TimeoutExpired,OSError,UnicodeError) as error:
+        raise ValueError('Process inspection unavailable; no publication.') from error
+    need(result.returncode==0,'Process inspection failed; no publication.')
+    need(isinstance(result.stdout,str) and 0<len(result.stdout)<=2*1024*1024,'Incomplete process inspection; no publication.')
+    value=json.loads(result.stdout)
+    need(isinstance(value,dict) and value.get('format')=='buddy-publication-processes-v1' and isinstance(value.get('names'),list) and value['names'] and all(isinstance(n,str) and 0<len(n)<=512 for n in value['names']),'Incomplete process inspection; no publication.')
+    return value['names']
+
+def assert_idle():
+    # Equivalent session/process refusals to the maintained Desktop publisher.
+    for rel,fmt in [('INTERLINKED-GUI-State/stats/session.json','interlinked-stats-session-v1'),('INTERLINKED-GUI-State/folder-session.json','interlinked-folder-session-v1')]:
+        path=KIT/rel
+        if path.exists():
+            value=guards.read(path)
+            need(value.get('format')==fmt and value.get('status')=='IDLE','Finish or reconcile the managed session before publication: '+rel)
+    mw5=KIT/'INTERLINKED-GUI-State/mw5'
+    if mw5.exists():
+        guards.ordinary(mw5)
+        value=guards.read(mw5/'session.json')
+        need(value.get('format')=='interlinked-mw5-session-v1' and value.get('status')=='IDLE','Finish MW5 collection and reconcile its session before publication.')
+    for name in ('binding.json','multi-binding.json'):
+        need(guards.read(KIT/'MAGIX-Workspace-State'/name).get('status')=='UNBOUND','Finish the managed MAGIX session before publication.')
+    for name in process_names():
+        need(not re.match(r'^(videodeluxe|movieeditpro|video_pro_x|magix)',name,re.I),'Close MAGIX normally before publication.')
+        need(not re.match(r'^(ue4editor|unrealeditor|mechwarrior5editor)([-.]|$)',name,re.I),'Close MW5/Unreal Editor normally before publication.')
+        need(name.casefold() not in ('interlinked','interlinked.master.worker'),'Exit the INTERLINKED desktop and MASTER worker normally before publication.')
 def publish_kit(overlay,receipt):
     seal_path=KIT/'INTERLINKED-App/GUI-CHECKSUMS.json';old_raw=guards.leaf(seal_path).read_bytes();seal=json.loads(old_raw)
-    need(seal.get('format') in ('interlinked-gui-checksums-v4','interlinked-gui-checksums-v5'),'Unknown installed GUI seal.')
+    need(seal.get('format') in ('interlinked-gui-checksums-v4','interlinked-gui-checksums-v5','interlinked-gui-checksums-v7'),'Unknown installed GUI seal.')
     for name,digest in seal['files'].items():need(file_sha(KIT/'INTERLINKED-App'/name)==digest,'Installed GUI differs: '+name)
     targets=kit_targets(overlay);buffers={};baseline_targets={}
     for row,dest in targets:
         # Publish the checked byte snapshot, never a later re-read of mutable
         # source files after waiting for another updater/session to finish.
-        buffers[dest]=guards.leaf(SOURCE/row['path']).read_bytes()
-        need(sha(buffers[dest])==row['sha256'],'Merge the reviewed current source before publication.')
+        source_bytes=guards.leaf(SOURCE/row['path']).read_bytes()
+        need(sha(source_bytes)==row['sha256'],'Merge the reviewed current source before publication.')
+        if row.get('installed_candidate_path'):
+            need(row['installed_candidate_path']=='installed/'+dest,'Installed candidate destination differs.')
+            buffers[dest]=guards.leaf(ROOT/'candidate'/row['installed_candidate_path']).read_bytes()
+            need(sha(buffers[dest])==row['installed_sha256'],'Reviewed installed candidate changed.')
+        else:buffers[dest]=source_bytes
         target=KIT/dest
         baseline_targets[dest]=guards.leaf(target).read_bytes() if target.exists() else None
-        if baseline_targets[dest] is not None and sha(baseline_targets[dest])==row['sha256']:continue
-        before=row['before_sha256'] if dest!='magix_projects.py' or row['before_sha256'] is not None else next(r for r in overlay['files'] if r['path'].endswith('magix_projects.py'))['source_sha256']
+        if baseline_targets[dest] is not None and sha(baseline_targets[dest])==row.get('installed_sha256',row['sha256']):continue
+        before=row.get('installed_before_sha256',row['before_sha256']) if dest!='magix_projects.py' or row['before_sha256'] is not None else next(r for r in overlay['files'] if r['path'].endswith('magix_projects.py'))['source_sha256']
         if before is None:need(not target.exists(),'Installed new module already exists.')
         else:need(target.exists() and file_sha(target)==before,'Installed baseline changed: '+dest)
     fixed=['INTERLINKED-App/interlinked_master.py','INTERLINKED-App/master_hook.py','INTERLINKED-App/master_bridge.py','INTERLINKED-Desktop/INTERLINKED.Master.Worker.exe','INTERLINKED-GUI-State/master/device.json','INTERLINKED-GUI-State/master/OWNER.json','magix_workspace.py','MAGIX-All-Projects-Index.json']
+    target_paths={dest for _,dest in targets}
+    fixed.extend('INTERLINKED-App/'+name for name in seal['files'] if 'INTERLINKED-App/'+name not in target_paths)
+    fixed.extend(['INTERLINKED-GUI-State/master/settings.json',r'C:\Program Files\INTERLINKED Cooler Startup\startup.json',r'C:\Program Files\INTERLINKED Cooler Startup\INTERLINKED.Sensor.Startup.exe'])
     preserved={p:file_sha(KIT/p) for p in fixed if (KIT/p).exists()}
     backup=receipt/'kit-before';backup.mkdir();prior={}
     with ExitStack() as stack:
         for p in ('INTERLINKED-GUI-State/.gui-instance.lock','MAGIX-Workspace-State/.workflow.lock'):stack.enter_context(native_lock(KIT/p))
+        assert_idle()
         need(guards.leaf(seal_path).read_bytes()==old_raw,'Installed GUI seal changed while waiting for publication locks.')
         for name,digest in seal['files'].items():need(file_sha(KIT/'INTERLINKED-App'/name)==digest,'Installed GUI changed while waiting for publication locks: '+name)
         for row,dest in targets:
             target=KIT/dest;current=guards.leaf(target).read_bytes() if target.exists() else None
             need(current==baseline_targets[dest],'Installed target changed while waiting for publication locks: '+dest)
         for p,digest in preserved.items():need(file_sha(KIT/p)==digest,'Preserved dependency changed while waiting for publication locks: '+p)
-        for name in ('binding.json','multi-binding.json'):need(guards.read(KIT/'MAGIX-Workspace-State'/name).get('status')=='UNBOUND','Finish the managed MAGIX session before publication.')
-        running=subprocess.run(['powershell.exe','-NoProfile','-NonInteractive','-Command',"if(Get-Process -Name Videodeluxe -ErrorAction SilentlyContinue){exit 4}"],capture_output=True)
-        need(running.returncode==0,'Close MAGIX normally before publishing the reviewed launcher.')
         for row,dest in targets:
             prior[dest]=baseline_targets[dest]
             if prior[dest] is not None:
@@ -134,13 +179,14 @@ def publish_kit(overlay,receipt):
         try:
             for row,dest in targets:
                 atomic(KIT/dest,buffers[dest])
-                need(file_sha(KIT/dest)==row['sha256'],'Published target readback differs: '+dest)
-            newseal=dict(seal,format='interlinked-gui-checksums-v5',files=dict(seal['files']))
+                need(file_sha(KIT/dest)==row.get('installed_sha256',row['sha256']),'Published target readback differs: '+dest)
+            newseal=dict(seal,format=seal['format'] if seal['format']=='interlinked-gui-checksums-v7' else 'interlinked-gui-checksums-v5',files=dict(seal['files']))
             for row,dest in targets:
-                if dest.startswith('INTERLINKED-App/'):newseal['files'][dest.removeprefix('INTERLINKED-App/')]=row['sha256']
+                if dest.startswith('INTERLINKED-App/'):newseal['files'][dest.removeprefix('INTERLINKED-App/')]=row.get('installed_sha256',row['sha256'])
             seal_bytes=(json.dumps(newseal,indent=2)+'\n').encode('utf-8')
             atomic(seal_path,seal_bytes)
             need(guards.leaf(seal_path).read_bytes()==seal_bytes,'Published GUI seal readback differs.')
+            assert_idle()
             for p,digest in preserved.items():need(file_sha(KIT/p)==digest,'Preserved MASTER/base bytes changed: '+p)
         except BaseException as error:
             rollback_errors=[]
@@ -157,7 +203,7 @@ def publish_kit(overlay,receipt):
             guards.write(receipt/'receipt.json',dict(format='interlinked-buddy-publication-v1',mode='installed',status='PUBLICATION_UNCERTAIN' if rollback_errors else 'FAILED_ROLLED_BACK',utc=utc(),error=str(error),rollback_errors=rollback_errors,project_files_written=False,workspace_state_written=False))
             if rollback_errors:raise RuntimeError('Publication failed and some app bytes could not be restored; retain backups and reconcile the receipt.') from error
             raise
-    guards.write(receipt/'receipt.json',dict(format='interlinked-buddy-publication-v1',mode='installed',status='PUBLISHED',utc=utc(),files=[dict(path=dest,sha256=row['sha256']) for row,dest in targets],seal_sha256=file_sha(seal_path),preserved_files=preserved,project_files_written=False,workspace_state_written=False))
+    guards.write(receipt/'receipt.json',dict(format='interlinked-buddy-publication-v1',mode='installed',status='PUBLISHED',utc=utc(),files=[dict(path=dest,sha256=row.get('installed_sha256',row['sha256']),source_sha256=row['sha256']) for row,dest in targets],seal_sha256=file_sha(seal_path),preserved_files=preserved,project_files_written=False,workspace_state_written=False))
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('mode',choices=('check','merge-source','publish-kit'));args=parser.parse_args();overlay=baseline()
     if args.mode=='check':print(json.dumps(dict(status='CANDIDATE_VERIFIED',files=len(overlay['files']))));return

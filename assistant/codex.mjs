@@ -28,7 +28,7 @@ export class CodexChat {
       const c=this.spawnProcess(this.executable,['app-server','--listen','stdio://',...flags],{cwd:this.cwd,shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});this.child=c;let buffer='';
       c.stdout.setEncoding('utf8');c.stdout.on('data',chunk=>{if(this.child!==c)return;buffer+=chunk;if(buffer.length>8*1024*1024){this.fail(Error('Codex response exceeded limit.'),c);return;}let i;while((i=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,i);buffer=buffer.slice(i+1);try{this.message(JSON.parse(line),c).catch(e=>this.fail(e,c));}catch(e){this.fail(e,c);}}});
       let diagnostic='';c.stderr.on('data',b=>{if(diagnostic.length<1600)diagnostic+=String(b).replace(/https?:\/\/\S+/g,'[URL]').replace(/(?:sk-|Bearer\s+)\S+/g,'[credential]');});c.on('error',e=>this.fail(e,c));c.on('exit',()=>this.fail(Error('Codex chat connection closed. '+diagnostic.trim()),c));
-      await this.rpc('initialize',{clientInfo:{name:'edit_buddy',title:'ED-IT Buddy',version:'0.3.1'},capabilities:{experimentalApi:true}});
+      await this.rpc('initialize',{clientInfo:{name:'edit_buddy',title:'ED-IT Buddy',version:'0.4.1'},capabilities:{experimentalApi:true}});
       c.stdin.write(JSON.stringify({method:'initialized'})+'\n');
       const account=await this.rpc('account/read',{refreshToken:false});this.auth={signed_in:!!account.account,requires_auth:account.requiresOpenaiAuth};
       // An empty mcp_servers table merges with inherited configuration rather

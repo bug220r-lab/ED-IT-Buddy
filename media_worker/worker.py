@@ -34,6 +34,9 @@ def main():
 def run(engine, args):
     with worker_lock(engine.state):
         if args.preflight:
+            if engine.config.get("archive_root"):
+                from media_worker.archive import root as archive_root
+                archive_root(engine)
             from media_worker.vision import preflight
             result = preflight(engine)
             atomic_json(engine.state / "gpu-preflight.json", result)

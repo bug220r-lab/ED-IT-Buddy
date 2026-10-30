@@ -1,4 +1,6 @@
 {
+  "archive_root": "C:\\Users\\jlewi\\Documents\\ED-IT Buddy Media Library",
+  "archive_excluded_roots": ["C:\\Users\\jlewi\\AppData\\Local\\ProjectLibrary\\Cache"],
   "expected_host": "MSI",
   "downloader_root": "C:\\Users\\jlewi\\Documents\\VideoDownloader",
   "source_allowlist": ["C:\\Users\\jlewi\\Documents", "C:\\Users\\jlewi\\OneDrive\\Documents"],
