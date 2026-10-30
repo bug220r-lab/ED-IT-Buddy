@@ -1,0 +1,4 @@
+node_modules/
+.pnpm-store/
+config.local.json
+test/*.exe

@@ -1,0 +1,16 @@
+{
+  "request_id": "buddy-demo-20261030-v1",
+  "workspace": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT Buddy\\portal\\workspaces\\demo-20261030",
+  "steps": [
+    { "action": "create_project", "args": { "project_path": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT Buddy\\portal\\workspaces\\demo-20261030\\Buddy Portal Demo.MVP", "width": 640, "height": 360, "fps": 30 } },
+    { "action": "import_media", "args": { "media_path": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT Buddy\\portal\\workspaces\\demo-20261030\\Clip-A.avi", "clip_id": "A" } },
+    { "action": "import_media", "args": { "media_path": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT Buddy\\portal\\workspaces\\demo-20261030\\Clip-B.avi", "clip_id": "B" } },
+    { "action": "trim_clip", "args": { "clip_id": "A", "source_in_frame": 0, "source_out_frame": 60 } },
+    { "action": "trim_clip", "args": { "clip_id": "B", "source_in_frame": 30, "source_out_frame": 120 } },
+    { "action": "append_clip", "args": { "clip_id": "A", "track": 1 } },
+    { "action": "append_clip", "args": { "clip_id": "B", "track": 1 } },
+    { "action": "add_title", "args": { "text": "ED-IT Buddy", "timeline_frame": 0, "duration_frames": 60, "track": 2 } },
+    { "action": "save_project", "args": { "project_path": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT Buddy\\portal\\workspaces\\demo-20261030\\Buddy Portal Demo.MVP" } },
+    { "action": "export_video", "args": { "output_path": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT Buddy\\portal\\workspaces\\demo-20261030\\Buddy Portal Demo.mp4" } }
+  ]
+}

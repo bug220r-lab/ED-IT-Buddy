@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "projectName": "[REDACTED]",
+  "revisionLabel": "Test 3",
+  "exportPath": null,
+  "projectPath": null,
+  "mappingConfirmed": false,
+  "source": {
+    "title": "Video Edit Critique",
+    "url": "chatgpt-conversation://6adac757-c844-83ea-af8c-9d29035e387c",
+    "kind": "prior_critique",
+    "description": "Imported suggestions from the earlier Test 3 critique. No fresh video analysis or MAGIX effect inspection is claimed. Times are approximate export positions, not verified project positions."
+  },
+  "notes": [
+    {
+      "id": "test3-news-entrance",
+      "title": "Simplify the news entrance",
+      "startSeconds": 24.2,
+      "endSeconds": 24.8,
+      "timeLabel": "About 00:24.2–00:24.8",
+      "observation": "The earlier critique describes several competing entrance treatments before the news image settles.",
+      "suggestion": "Compare a clear [REDACTED] title, a readable RESIST insert, and a decisive cut into the news footage. Let the news image establish itself before another major change.",
+      "status": "suggested",
+      "steps": [
+        {
+          "id": "focus",
+          "title": "Bring MAGIX forward",
+          "instruction": "Activate the connected MAGIX window. This changes focus only; it does not change your project.",
+          "kind": "assisted",
+          "action": "focus_magix",
+          "completed": false
+        },
+        {
+          "id": "locate",
+          "title": "Match the export moment to your project",
+          "instruction": "Confirm that the project matches Test 3 and locate the title-to-news transition. Save a separately named project copy before editing. These approximate export times do not identify a timeline object automatically.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        },
+        {
+          "id": "inspect",
+          "title": "Inspect the current controls",
+          "instruction": "Refresh Buddy’s list of accessible controls in the connected MAGIX window. This reads the current interface; it does not open an effect panel or change a setting.",
+          "kind": "assisted",
+          "action": "inspect_controls",
+          "completed": false
+        },
+        {
+          "id": "revise",
+          "title": "Try one simpler entrance",
+          "instruction": "Manually compare removing one competing overlay or entrance treatment at a time. Preserve the title and the news context. Keep only the changes that make the arrival clearer.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        },
+        {
+          "id": "compare",
+          "title": "Compare the result at normal speed",
+          "instruction": "Preview the section in context, then compare a new export with Test 3. Mark this note reviewed only after checking the result. If timing changed, recheck the other notes against the new revision.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        }
+      ]
+    },
+    {
+      "id": "test3-pig-ghosting",
+      "title": "Let the pig image resolve",
+      "startSeconds": 4.4,
+      "endSeconds": 5.1,
+      "timeLabel": "About 00:04.4–00:05.1",
+      "observation": "The earlier critique describes bright highlights and overlapping contours that make the pig image difficult to identify.",
+      "suggestion": "Keep a recognizable primary image beneath the disruption. Compare reducing either the ghost strength or the brightness, one change at a time.",
+      "status": "suggested",
+      "steps": [
+        {
+          "id": "focus",
+          "title": "Bring MAGIX forward",
+          "instruction": "Activate the connected MAGIX window. This changes focus only; it does not change your project.",
+          "kind": "assisted",
+          "action": "focus_magix",
+          "completed": false
+        },
+        {
+          "id": "locate",
+          "title": "Identify the object and its treatment",
+          "instruction": "Match the export moment to your project and select the affected object. Save a separately named project copy before editing. Identify the actual effect or layers; the export does not reveal the original preset or values.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        },
+        {
+          "id": "revise",
+          "title": "Test one reduction",
+          "instruction": "Manually reduce either the overlap strength or the brightness, then compare. Keep one clear primary image. These are creative experiments, not measured replacement settings.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        },
+        {
+          "id": "compare",
+          "title": "Check the disturbance and the recovery",
+          "instruction": "Preview at normal speed. Check whether the subject becomes recognizable after the disturbance. Compare the next export before marking this note reviewed.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        }
+      ]
+    },
+    {
+      "id": "test3-resist-contrast",
+      "title": "Give RESIST stronger contrast",
+      "startSeconds": 24.1,
+      "endSeconds": 24.8,
+      "timeLabel": "Within about 00:24.1–00:24.8",
+      "observation": "The earlier critique describes pale RESIST lettering against bright paper during the news transition. The exact insert boundaries have not been remeasured.",
+      "suggestion": "If the word should be readable, compare stronger separation between the lettering and background before extending the insert.",
+      "status": "suggested",
+      "steps": [
+        {
+          "id": "focus",
+          "title": "Bring MAGIX forward",
+          "instruction": "Activate the connected MAGIX window. This changes focus only; it does not change your project.",
+          "kind": "assisted",
+          "action": "focus_magix",
+          "completed": false
+        },
+        {
+          "id": "locate",
+          "title": "Check how the word was made",
+          "instruction": "Find the RESIST insert in the matching project. Check whether the lettering is editable text or baked into an image. Save a separately named project copy before editing.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        },
+        {
+          "id": "revise",
+          "title": "Separate the lettering from the background",
+          "instruction": "Manually adjust the relevant text or image treatment for stronger contrast. Preserve the intended flash. The correct controls depend on the actual object type and effects.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        },
+        {
+          "id": "compare",
+          "title": "Check readability in context",
+          "instruction": "Preview at normal speed. Consider a longer hold only if the intended word still fails to register. Compare the next export before marking this note reviewed.",
+          "kind": "manual",
+          "action": null,
+          "completed": false
+        }
+      ]
+    }
+  ]
+}

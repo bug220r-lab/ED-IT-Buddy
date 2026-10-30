@@ -1,0 +1,16 @@
+{
+  "name": "edit-buddy-portal",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Local MCP and SSH transport for the ED-IT Buddy MSI editing worker",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "zod": "4.6.7"
+  }
+}

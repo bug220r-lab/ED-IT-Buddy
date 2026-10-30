@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:edit-buddy:review-notes:v1",
+  "title": "ED-IT Buddy review notes version 1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "projectName", "revisionLabel", "exportPath", "projectPath", "mappingConfirmed", "source", "notes"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "projectName": { "type": "string", "maxLength": 200 },
+    "revisionLabel": { "type": "string", "maxLength": 200 },
+    "exportPath": { "type": ["string", "null"], "maxLength": 32768 },
+    "projectPath": { "type": ["string", "null"], "maxLength": 32768 },
+    "mappingConfirmed": { "type": "boolean" },
+    "source": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["title", "url", "kind", "description"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 500 },
+        "url": { "type": ["string", "null"], "maxLength": 4000 },
+        "kind": { "enum": ["prior_critique", "manual", "imported"] },
+        "description": { "type": "string", "maxLength": 10000 }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/note" }
+    }
+  },
+  "$defs": {
+    "note": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "title", "startSeconds", "endSeconds", "timeLabel", "observation", "suggestion", "status", "steps"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "startSeconds": { "type": ["number", "null"], "minimum": 0, "maximum": 604800 },
+        "endSeconds": { "type": ["number", "null"], "minimum": 0, "maximum": 604800 },
+        "timeLabel": { "type": "string", "maxLength": 160 },
+        "observation": { "type": "string", "maxLength": 10000 },
+        "suggestion": { "type": "string", "maxLength": 10000 },
+        "status": { "enum": ["suggested", "in_progress", "reviewed", "dismissed"] },
+        "editedByUser": { "type": "boolean" },
+        "editedAtUtc": { "type": "string", "format": "date-time", "maxLength": 100 },
+        "recipeResetByUserEdit": { "type": "boolean" },
+        "steps": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/step" } }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "title", "instruction", "kind", "action", "completed"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "instruction": { "type": "string", "maxLength": 10000 },
+        "kind": { "enum": ["manual", "assisted"] },
+        "action": { "enum": [null, "focus_magix", "inspect_controls"] },
+        "completed": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "manual" } } },
+          "then": { "properties": { "action": { "type": "null" } } },
+          "else": { "properties": { "action": { "enum": ["focus_magix", "inspect_controls"] } } }
+        }
+      ]
+    }
+  }
+}

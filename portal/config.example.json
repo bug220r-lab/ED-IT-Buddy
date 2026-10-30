@@ -1,0 +1,10 @@
+{
+  "host": "jlewi@192.168.247.1",
+  "identityFile": "C:\\Users\\Jude\\.ssh\\edit_buddy_msi_ed25519",
+  "knownHostsFile": "C:\\Users\\Jude\\.ssh\\known_hosts",
+  "hostKeyAlias": "msi",
+  "sshExecutable": "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
+  "remoteBridge": "C:\\Users\\jlewi\\AppData\\Local\\ED-IT Buddy\\portal\\v0.2.0\\ED-IT Buddy.Bridge.exe",
+  "requestTimeoutMs": 20000,
+  "heartbeatIntervalMs": 5000
+}

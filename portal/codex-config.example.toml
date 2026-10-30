@@ -1,0 +1,12 @@
+# Merge only this named server into the project's existing .codex/config.toml.
+# Restart/reload MCP servers after registration, then verify /mcp or tools/list.
+[mcp_servers.edit_buddy]
+command = 'C:\Users\Jude\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
+args = ['C:\Users\Jude\OneDrive\Documents\ED-IT Buddy\portal\server.mjs']
+cwd = 'C:\Users\Jude\OneDrive\Documents\ED-IT Buddy\portal'
+startup_timeout_sec = 20
+tool_timeout_sec = 30
+enabled_tools = ['get_state', 'get_capabilities', 'run_sequence', 'get_job', 'stop_job']
+
+[mcp_servers.edit_buddy.env]
+EDIT_BUDDY_PORTAL_CONFIG = 'C:\Users\Jude\OneDrive\Documents\ED-IT Buddy\portal\config.example.json'
