@@ -77,6 +77,9 @@ namespace EditBuddy
         private bool chatStreamed;
         private bool disposed;
         private int resultGeneration;
+        private string pendingTaskId = "";
+        private string loadedResultsTaskId = "";
+        private string loadingResultsTaskId = "";
         private string projectId = "";
         private string attachmentPath = "";
 
@@ -227,6 +230,15 @@ namespace EditBuddy
             Dictionary<string, object> state = Map(await RequireClient().RequestAsync("bootstrap", new { }));
             string selected = Text(state, "selected_project_id"); if (!String.IsNullOrEmpty(selected)) projectId = selected;
             RenderProjects(List(state, "projects")); RenderSources(List(state, "sources")); RenderTasks(List(state, "tasks"));
+            if (taskList.SelectedItem == null)
+            {
+                AssistantTaskRow recentSearch = taskList.Items.Cast<AssistantTaskRow>().FirstOrDefault(delegate(AssistantTaskRow row) { return Text(row.Value, "kind") == "search"; });
+                if (recentSearch != null)
+                {
+                    rendering = true; try { taskList.SelectedItem = recentSearch; } finally { rendering = false; }
+                    await LoadTask();
+                }
+            }
             object status; if (state.TryGetValue("status", out status)) RenderServiceState(Map(status));
             Show("Ready. Give Buddy a request or use the media controls.", false);
         }
@@ -241,6 +253,7 @@ namespace EditBuddy
             {
                 await RequireClient().RequestAsync("select_project", new { project_id = choice.Id }); projectId = choice.Id;
                 ++resultGeneration;
+                pendingTaskId = ""; loadedResultsTaskId = "";
                 assetList.ItemsSource = null; reportView.Clear(); chatHistory.Text = "Project: " + choice.Label + "\n\n";
                 await RefreshTasks(true);
             }
@@ -297,7 +310,8 @@ namespace EditBuddy
                 Dictionary<string, object> data = Map(await RequireClient().RequestAsync("tasks", new { }, 20000));
                 RenderTasks(List(data, "tasks")); object status; if (data.TryGetValue("status", out status)) RenderServiceState(Map(status));
                 AssistantTaskRow after = taskList.SelectedItem as AssistantTaskRow;
-                if (after != null && Text(after.Value, "status") != previousStatus) await LoadTask();
+                if (after != null && (Text(after.Value, "status") != previousStatus ||
+                    (Text(after.Value, "status") == "completed" && loadedResultsTaskId != after.Id && loadingResultsTaskId != after.Id))) await LoadTask();
                 if (showMessage) Show("Task observations refreshed. Offline observations remain marked in the task state.", false);
             }
             catch (Exception error) { if (showMessage) Show(error.Message, true); }
@@ -307,17 +321,25 @@ namespace EditBuddy
         private async Task LoadTask()
         {
             AssistantTaskRow task = taskList.SelectedItem as AssistantTaskRow; if (task == null) return;
+            if (loadingResultsTaskId == task.Id) return;
+            loadingResultsTaskId = task.Id;
             int generation = ++resultGeneration;
             selectedTask.Text = task.Label; double progress = Number(task.Value, "progress", 0); taskProgress.Value = progress <= 1 ? progress * 100 : progress;
             try
             {
-                object result = await RequireClient().RequestAsync("results", new { task_id = task.Id }, 30000);
+                object result = await RequireClient().RequestAsync("results", new { task_id = task.Id }, 120000);
                 if (generation != resultGeneration || disposed) return;
                 List<Dictionary<string, object>> assets = ResultItems(result); if (assets.Count > 0) RenderAssets(assets);
+                if (Text(task.Value, "status") == "completed")
+                {
+                    loadedResultsTaskId = task.Id;
+                    if (Text(task.Value, "kind") == "search") Show(assets.Count == 0 ? "Search completed with no candidate matches." : "Search completed: " + assets.Count + " candidate matches. Select a match to preview it.", false);
+                }
                 Dictionary<string, object> resultMap = Map(result); string path = Text(resultMap, "preview_path");
                 if (!String.IsNullOrEmpty(path)) Show("Preview ready. Select its asset in Media and choose Preview.", false);
             }
             catch (Exception error) { if (generation == resultGeneration) Show(error.Message, true); }
+            finally { if (loadingResultsTaskId == task.Id) loadingResultsTaskId = ""; }
         }
 
         private async Task TaskAction(string action)
@@ -479,11 +501,13 @@ namespace EditBuddy
         private void RenderTasks(List<Dictionary<string, object>> data)
         {
             string selected = taskList.SelectedItem is AssistantTaskRow ? ((AssistantTaskRow)taskList.SelectedItem).Id : "";
+            if (pendingTaskId.Length > 0) selected = pendingTaskId;
             rendering = true;
             try
             {
                 List<AssistantTaskRow> rows = data.AsEnumerable().Reverse().Select(delegate(Dictionary<string, object> value) { return new AssistantTaskRow { Value = value }; }).ToList();
                 taskList.ItemsSource = rows; AssistantTaskRow row = rows.FirstOrDefault(delegate(AssistantTaskRow item) { return item.Id == selected; }); taskList.SelectedItem = row;
+                if (row != null && row.Id == pendingTaskId) pendingTaskId = "";
                 if (row != null) { selectedTask.Text = row.Label; double progress = Number(row.Value, "progress", 0); taskProgress.Value = progress <= 1 ? progress * 100 : progress; }
             }
             finally { rendering = false; }
@@ -523,7 +547,8 @@ namespace EditBuddy
         {
             Dictionary<string, object> map = Map(value); string id = Text(map, "task_id"); object nested; if (id.Length == 0 && map.TryGetValue("task", out nested)) id = Text(Map(nested), "task_id");
             if (id.Length == 0) return;
-            foreach (object item in taskList.Items) { AssistantTaskRow row = item as AssistantTaskRow; if (row != null && row.Id == id) { taskList.SelectedItem = row; taskList.ScrollIntoView(row); break; } }
+            pendingTaskId = id;
+            foreach (object item in taskList.Items) { AssistantTaskRow row = item as AssistantTaskRow; if (row != null && row.Id == id) { pendingTaskId = ""; taskList.SelectedItem = row; taskList.ScrollIntoView(row); break; } }
         }
 
         private AssistantProcessClient RequireClient()

@@ -14,6 +14,8 @@ Tasks and per-project conversation IDs live under `%LOCALAPPDATA%\ED-IT Buddy\as
 
 ## Current behavior
 
+The desktop retains a requested search selection when a task poll overlaps submission, retries completed result retrieval after a transient failure, and restores the latest search after reconnect. Search results use a separate two-minute retrieval timeout for verified thumbnail transfers. Regression coverage exercises delayed task visibility, a failed result fetch, recovery without a status change, and reconnect without submitting a new search.
+
 - Choose an INTERLINKED project, queue supplied URLs, register selected MSI footage folders, index and search visual moments, preview candidates, extract clips, and organize copies by date, source, or tag.
 - Clear requests can run through chat or normal controls. Copies retain existing original paths. Source files and the established downloader's shared archive and cleanup workflow remain intact.
 - Media jobs run on MSI independently of the SSH client. Buddy retains offline tasks and reconciles stable request IDs after reconnect. Existing library index jobs appear as **Library index** across project task views while retaining their original worker identity.
