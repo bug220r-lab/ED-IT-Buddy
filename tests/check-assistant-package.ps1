@@ -19,7 +19,7 @@ if(@(Compare-Object ($expected|Sort-Object) ($actual|Sort-Object)).Count){throw 
 $manifestFile=Join-Path $packageRoot 'package-manifest.json'
 if((Get-Item -LiteralPath $manifestFile).Length -gt 65536){throw 'Assistant package manifest exceeds its bound.'}
 $manifest=Get-Content -LiteralPath $manifestFile -Raw|ConvertFrom-Json
-if($manifest.format -ne 'buddy-assistant-package-v1' -or $manifest.version -ne '0.3.1-preview' -or $manifest.release_verified -ne $false){throw 'Unexpected assistant package version or release claim.'}
+if($manifest.format -ne 'buddy-assistant-package-v1' -or $manifest.version -ne '0.3.2-index-status-preview' -or $manifest.release_verified -ne $false){throw 'Unexpected assistant package version or release claim.'}
 if(@($manifest.files.PSObject.Properties).Count -ne $expected.Count-1){throw 'Assistant hash manifest is incomplete.'}
 foreach($entry in $manifest.files.PSObject.Properties){
  if($entry.Name -notin $expected -or $entry.Name -eq 'package-manifest.json' -or $entry.Value -notmatch '^[a-f0-9]{64}$'){throw 'Invalid assistant hash-manifest entry.'}
@@ -29,7 +29,7 @@ foreach($entry in $manifest.files.PSObject.Properties){
 foreach($name in @('ED-IT Buddy.exe','ED-IT Buddy.Probe.exe')){
  $executable=Join-Path $packageRoot ('bin\'+$name)
  $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($executable)
- if($version.FileVersion -ne '0.3.1.0' -or $version.ProductVersion -ne '0.3.1-preview'){throw ('Assistant executable version is not stamped: '+$name)}
+ if($version.FileVersion -ne '0.3.2.0' -or $version.ProductVersion -ne '0.3.2-index-status-preview'){throw ('Assistant executable version is not stamped: '+$name)}
  $bytes=[IO.File]::ReadAllBytes($executable)
  if($bytes.Length -lt 128 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90){throw 'Invalid assistant PE executable.'}
  $offset=[BitConverter]::ToInt32($bytes,60)
@@ -41,4 +41,4 @@ $broker=Get-Content -LiteralPath (Join-Path $packageRoot 'assistant/package.json
 if($broker.version -ne '0.3.1'){throw 'Assistant broker version does not match the desktop package.'}
 $connection=Get-Content -LiteralPath (Join-Path $packageRoot 'assistant/config.example.json') -Raw|ConvertFrom-Json
 if($connection.remote.rpc -notmatch '\\v0\.3\.2\\media_worker\\rpc\.py$'){throw 'Assistant package does not target the accepted MSI worker version.'}
-Write-Output 'PASS: assistant runtime allowlist, complete SHA-256 manifest,0.3.1 executable/broker metadata, x64/.NET4.8, and MSI worker target. No application was launched.'
+Write-Output 'PASS: assistant runtime allowlist, complete SHA-256 manifest,0.3.2 desktop / 0.3.1 broker metadata, x64/.NET4.8, and MSI worker target. No application was launched.'

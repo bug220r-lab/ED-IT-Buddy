@@ -1,14 +1,14 @@
-# ED-IT Buddy 0.3.1 assistant preview
+# ED-IT Buddy 0.3.2 index status preview
 
 ED-IT Buddy now provides a desktop Manager, durable task broker, MSI media worker, Codex chat, and an installed INTERLINKED companion. Live checks include the normal desktop connection and chat workflow, delivery during a managed MAGIX edit, and explicit verified save-back. The preview remains `release_verified: false` while the real full-corpus retrieval evaluation remains incomplete.
 
 ## Start and data
 
-Run `./package-assistant.ps1` to create a separate portable package, then open its `bin/ED-IT Buddy.exe`. The historical `package.ps1` entry point forwards to this complete packager so the Manager always includes its broker. Existing `bin` and earlier packages are not replaced. The desktop file version is `0.3.1.0`, with informational version `0.3.1-preview`.
+Run `./package-assistant.ps1` to create a separate portable package, then open its `bin/ED-IT Buddy.exe`. The historical `package.ps1` entry point forwards to this complete packager so the Manager always includes its broker. Existing `bin` and earlier packages are not replaced. The desktop file version is `0.3.2.0`, with informational version `0.3.2-index-status-preview`.
 
 The Manager is the default tab. Guide, Review, and Controls remain available. The Manager starts disconnected; **Connect / refresh** starts the local broker and checks MSI, INTERLINKED, and the existing Codex sign-in. **Sign in to Codex** and frame attachments are explicit actions. The legacy MAGIX review connection is separate and does not start automatically from the Manager.
 
-Windows x64, .NET Framework 4.8, and Node 22.13 or newer are required. `EDIT_BUDDY_NODE` can select an existing Node executable. The broker reads `assistant/config.example.json` unless `EDIT_BUDDY_ASSISTANT_CONFIG` selects a private configuration file. The example now targets the established MSI identity and immutable `v0.3.2` media-worker directory; it contains no credentials. The worker patch has a separate rollout acceptance below; the desktop and local broker remain `0.3.1`. Private `assistant/config.json` is ignored by Git.
+Windows x64, .NET Framework 4.8, and Node 22.13 or newer are required. `EDIT_BUDDY_NODE` can select an existing Node executable. The broker reads `assistant/config.example.json` unless `EDIT_BUDDY_ASSISTANT_CONFIG` selects a private configuration file. The example now targets the established MSI identity and immutable `v0.3.2` media-worker directory; it contains no credentials. The worker patch has a separate rollout acceptance below; the local broker remains `0.3.1`; this desktop status preview is `0.3.2`. Private `assistant/config.json` is ignored by Git.
 
 Tasks and per-project conversation IDs live under `%LOCALAPPDATA%\ED-IT Buddy\assistant`. Keep this default location outside source repositories so unrelated project-specific tools are not inherited by chat. Staging and preview caches are separate from original footage and managed project files. Execution, delivery, save-back, and human review are separate observations. Reports remain available locally if INTERLINKED publication fails.
 
@@ -70,3 +70,21 @@ python -B -m unittest discover -s tests -p test_media_proxy_skip.py -v
 ```
 
 The assistant packager includes only the explicit runtime/documentation allowlist and its complete SHA-256 manifest. It excludes keys, personal task state, media, models, private catalogs, and generated INTERLINKED snapshots. Unrelated pre-existing portal, MASTER-status, and MAGIX ownership work remains separate from this assistant release's changes.
+
+## Index progress preview
+
+The Manager now keeps an MSI indexing status bar above Media, Tasks, and Report.
+Click **Connect / refresh** to discover running library jobs. The bar refreshes
+with task observations, shows the current file and file-based percentage, and
+lets you select another indexing task. Already indexed footage remains searchable
+while the remaining files are processed. This percentage describes file progress,
+not elapsed time or verified library coverage; long recordings can take longer.
+
+Paused, queued, failed, and needs-review work has a separate label. Offline or
+stale observations are marked **last known progress**. Use **Connect / refresh**
+after a connection interruption. Closing Buddy leaves the MSI job running.
+Older worker skip stages show a conservative checkpoint until a fresh stage or
+terminal outcome is available. Terminal review counts come from worker manifests.
+
+This desktop preview is 0.3.2 and retains the accepted 0.3.1 broker / MSI 0.3.2
+connection. It does not deploy or interrupt the MSI worker.

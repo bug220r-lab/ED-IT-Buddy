@@ -12,7 +12,7 @@ foreach ($reference in @('System.dll','System.Core.dll','System.Web.Extensions.d
     $arguments += '/reference:' + $path
 }
 $output = Join-Path $fixture 'AssistantProcessClientTests.exe'
-& (Join-Path $framework 'csc.exe') @arguments ('/out:' + $output) (Join-Path $testRoot 'src\AssistantProcessClient.cs') (Join-Path $testRoot 'src\AssistantView.cs') (Join-Path $testRoot 'src\MatrixTheme.cs') (Join-Path $PSScriptRoot 'AssistantProcessClientTests.cs')
+& (Join-Path $framework 'csc.exe') @arguments ('/out:' + $output) (Join-Path $testRoot 'src\AssistantProcessClient.cs') (Join-Path $testRoot 'src\AssistantView.cs') (Join-Path $testRoot 'src\IndexProgressPanel.cs') (Join-Path $testRoot 'src\MatrixTheme.cs') (Join-Path $PSScriptRoot 'AssistantProcessClientTests.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Assistant client tests failed to compile.' }
 & $output $fixture
 if ($LASTEXITCODE -ne 0) { throw 'Assistant client tests failed.' }

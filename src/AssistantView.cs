@@ -68,6 +68,7 @@ namespace EditBuddy
         private readonly ComboBox organization = new ComboBox();
         private readonly TextBox organizationTag = new TextBox();
         private readonly ProgressBar taskProgress = new ProgressBar();
+        private readonly IndexProgressPanel indexProgress = new IndexProgressPanel();
         private readonly Button connectButton;
         private readonly Button sendButton;
         private bool rendering;
@@ -104,6 +105,7 @@ namespace EditBuddy
             TextBlock projectCaption = Description("INTERLINKED project"); projectCaption.Width = 190; projectCaption.VerticalAlignment = VerticalAlignment.Center; projectLine.Children.Add(projectCaption);
             projects.DisplayMemberPath = "Label"; projects.MinWidth = 200; projects.Margin = new Thickness(0, 0, 8, 0); projects.SelectionChanged += ProjectChanged;
             AutomationProperties.SetName(projects, "INTERLINKED project for Buddy tasks"); AutomationProperties.SetAutomationId(projects, "AssistantProject"); projectLine.Children.Add(projects);
+            heading.Children.Add(indexProgress);
 
             Grid columns = new Grid(); Grid.SetRow(columns, 1); layout.Children.Add(columns);
             columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3, GridUnitType.Star), MinWidth = 360 });
@@ -214,7 +216,7 @@ namespace EditBuddy
                 {
                     if (client != null) client.Dispose();
                     client = new AssistantProcessClient(root); client.Notification += OnNotification;
-                    client.Disconnected += delegate(string detail) { Dispatch(delegate { timer.Stop(); serviceState.Text = "Task broker disconnected"; Show(detail, true); }); };
+                    client.Disconnected += delegate(string detail) { Dispatch(delegate { timer.Stop(); indexProgress.MarkDisconnected(detail); serviceState.Text = "Task broker disconnected"; Show(detail, true); }); };
                 }
                 // Bootstrap provides the local queue even if the remote connection is unavailable.
                 await Bootstrap(); timer.Start();
@@ -228,6 +230,7 @@ namespace EditBuddy
         private async Task Bootstrap()
         {
             Dictionary<string, object> state = Map(await RequireClient().RequestAsync("bootstrap", new { }));
+            indexProgress.Update(state);
             string selected = Text(state, "selected_project_id"); if (!String.IsNullOrEmpty(selected)) projectId = selected;
             RenderProjects(List(state, "projects")); RenderSources(List(state, "sources")); RenderTasks(List(state, "tasks"));
             if (taskList.SelectedItem == null)
@@ -308,6 +311,7 @@ namespace EditBuddy
                 AssistantTaskRow before = taskList.SelectedItem as AssistantTaskRow;
                 string previousStatus = before == null ? "" : Text(before.Value, "status");
                 Dictionary<string, object> data = Map(await RequireClient().RequestAsync("tasks", new { }, 20000));
+                indexProgress.Update(data);
                 RenderTasks(List(data, "tasks")); object status; if (data.TryGetValue("status", out status)) RenderServiceState(Map(status));
                 AssistantTaskRow after = taskList.SelectedItem as AssistantTaskRow;
                 if (after != null && (Text(after.Value, "status") != previousStatus ||
@@ -597,7 +601,7 @@ namespace EditBuddy
         { List<Dictionary<string, object>> rows = ObjectList(value); if (rows.Count > 0) return rows; Dictionary<string, object> map = Map(value); foreach (string key in new[] { "results", "assets", "items", "outputs" }) { rows = List(map, key); if (rows.Count > 0) return rows; } object result; if (map.TryGetValue("result", out result)) return ResultItems(result); return rows; }
 
         public void Dispose()
-        { if (disposed) return; disposed = true; timer.Stop(); ++resultGeneration; if (client != null) client.Dispose(); }
+        { if (disposed) return; disposed = true; timer.Stop(); indexProgress.Dispose(); ++resultGeneration; if (client != null) client.Dispose(); }
     }
 
     internal sealed class AssistantPreviewWindow : Window
