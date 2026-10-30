@@ -33,16 +33,24 @@ export class Assistant {
     this.published=new Map();this.reporting=false;this.lastReportAttempt=0;
   }
   project(p=this.store.data.selected_project_id){return requireText(p,'selected INTERLINKED project',200);}
-  tasks(){return this.store.data.tasks.filter(t=>!this.store.data.selected_project_id||t.project_id===this.store.data.selected_project_id);}
+  tasks(){return this.store.data.tasks.filter(t=>!this.store.data.selected_project_id||t.project_id===this.store.data.selected_project_id||t.scope==='library');}
   snapshot(){return {projects:this.store.data.projects,sources:this.store.data.sources,tasks:this.tasks(),selected_project_id:this.store.data.selected_project_id,status:this.status};}
   async reconnect(){
     this.connected=true;await Promise.allSettled([
       (async()=>{try{const r=await this.interlinked.projects();this.store.data.projects=(r.projects||[]).map(p=>({...p,project_id:p.original_id||p.project_id||p.id,name:p.name||p.title||p.original_id||p.id}));this.status.interlinked='Connected';}catch(e){this.status.interlinked=e.message;}})(),
-      (async()=>{try{const c=await this.remote.request('get_capabilities');this.capabilities=c;this.status.msi=c.worker_online?'Connected':'MSI reachable; media worker is not running';const r=await this.remote.request('list_source_roots');this.store.data.sources=(Array.isArray(r)?r:r.roots||r.sources||[]).map(s=>({...s,source_id:s.root_id||s.source_id}));}catch(e){this.status.msi=e.message;}})(),
+      (async()=>{try{const c=await this.remote.request('get_capabilities');this.capabilities=c;this.status.msi=c.worker_online?'Connected':'MSI reachable; media worker is not running';const r=await this.remote.request('list_source_roots');this.store.data.sources=(Array.isArray(r)?r:r.roots||r.sources||[]).map(s=>({...s,source_id:s.root_id||s.source_id}));await this.discoverLibraryJobs();}catch(e){this.status.msi=e.message;}})(),
       (async()=>{try{const a=await this.chat.start();this.status.chat=a.signed_in?'Codex signed in':'Codex sign-in needed';}catch(e){this.status.chat=e.message;}})()
     ]);this.store.save();await this.sync();return this.snapshot();
   }
   async queue(kind,p,project){const task=this.store.add(kind,validateJob(kind,structuredClone(p)),this.project(project));if(this.connected)this.sync().catch(()=>{});this.event({event:'state_changed'});return task;}
+  async discoverLibraryJobs(){
+    const result=await this.remote.request('list_jobs',{limit:100});const sources=new Set(this.store.data.sources.map(s=>s.source_id));
+    for(const job of result.jobs||[]){
+      if(job.kind!=='index'||!job.params?.root_ids?.some(id=>sources.has(id))||this.store.data.tasks.some(t=>t.remote_job_id===job.job_id))continue;
+      this.store.data.tasks.push({task_id:'library-'+job.job_id,request_id:job.request_id,remote_job_id:job.job_id,project_id:job.project_id,scope:'library',kind:'index',params:job.params,status:job.status,progress:0,message:'Library indexing on MSI',created_at:new Date(job.created*1000).toISOString(),updated_at:new Date().toISOString(),outputs:[]});
+    }
+    this.store.save();
+  }
   async sync(){
     if(this.syncing)return;this.syncing=true;
     try{
@@ -59,14 +67,14 @@ export class Assistant {
             let progress=typeof p==='number'?p:0;if(p.total_items)progress=p.completed_items/p.total_items;if(p.total_files)progress=((p.indexed_files||0)+(p.source_duration_seconds?Math.min(1,(p.indexed_seconds||0)/p.source_duration_seconds):0))/p.total_files;
             const stage=typeof p==='object'?(p.stage||p.current_file||''):'';
             this.store.update(t,{status:j.status||t.status,progress:j.status==='completed'?1:Math.max(0,Math.min(1,progress)),message:j.message||j.error?.message||j.error||stage,remote:j});
-            if(['completed','needs_review'].includes(j.status)&&!t.results?.manifest){const result=await this.remote.request('get_results',{job_id:t.remote_job_id});if(result.manifest)this.store.update(t,{results:result,outputs:result.manifest.assets||[]});
-              if(j.status==='completed'&&t.results?.manifest&&['download','extract','organize'].includes(t.kind))await this.ingest(t).catch(e=>this.store.update(t,{delivery_status:'needs_review',message:'Prepared on MSI; delivery needs attention: '+e.message}));}
-            if(t.delivery_status&&['submitting','QUEUED','COPYING','submitted'].includes(t.delivery_status)){
-              try{const receipt=await this.interlinked.operation(t.request_id);this.store.update(t,{delivery_status:receipt.status,delivery_receipt:receipt});}catch(e){this.status.interlinked=e.message;}
-            }
+            if(['completed','needs_review'].includes(j.status)&&!t.results?.manifest){const result=await this.remote.request('get_results',{job_id:t.remote_job_id});if(result.manifest)this.store.update(t,{results:result,outputs:result.manifest.assets||[]});}
           }catch(e){this.status.msi=e.message;break;}
         }
       }
+      // File delivery has its own durable lifecycle. In particular, fetching a
+      // manifest once must not prevent recovery after an offline/lost-ACK ingest.
+      // Reconcile accepted deliveries even when MSI has subsequently disconnected.
+      for(const t of this.store.data.tasks)if(t.status==='completed'&&t.results?.manifest&&['download','extract','organize'].includes(t.kind))await this.reconcileDelivery(t);
       this.event({event:'state_changed'});
       this.publishReports();
     }finally{this.syncing=false;}
@@ -74,7 +82,7 @@ export class Assistant {
   find(id){const t=this.store.data.tasks.find(t=>t.task_id===id);if(!t)throw Error('Unknown task.');return t;}
   async results(t){
     if(!t.results?.manifest&&t.remote_job_id){const value=await this.remote.request('get_results',{job_id:t.remote_job_id});if(value.manifest){t.results=value;this.store.save();}}
-    const r=t.results?.manifest||t.results||{};const items=r.results?.length?r.results:(r.assets||[]).filter(a=>a.kind!=='metadata'&&a.kind!=='receipt');
+    const r=t.results?.manifest||t.results||{};const items=r.results?.length?r.results:(r.assets||[]).filter(a=>['video','preview'].includes(a.kind));
     const list=[];for(const item of items.slice(0,100)){const out={...item,source_path:item.source_path||item.absolute_path};
       if(item.source_asset_id)out.asset_id=item.source_asset_id;
       if(item.thumbnail_path&&item.thumbnail_sha256){try{out.thumbnail_path=await this.remote.copyArtifact({absolute_path:item.thumbnail_path,sha256:item.thumbnail_sha256,bytes:item.thumbnail_bytes},path.join(this.root,'previews'));}catch{delete out.thumbnail_path;}}
@@ -105,6 +113,28 @@ export class Assistant {
     const receipt=await this.interlinked.ingest({request_id:t.request_id,project_id:t.project_id,manifest_path:mpath});
     this.store.update(t,{delivery_status:receipt.status||'submitted',delivery_receipt:receipt});return receipt;
   }
+  async reconcileDelivery(t){
+    if(t.delivery_status==='COMPLETED')return;
+    const prior=t.delivery_receipt;
+    try{
+      const receipt=await this.interlinked.operation(t.request_id);
+      if(receipt.project_id&&receipt.project_id!==t.project_id)throw Error('Delivery receipt belongs to another project.');
+      this.status.interlinked='Connected';
+      if(receipt.status==='NOT_FOUND'){
+        // A known failed/uncertain/accepted transaction cannot silently become a
+        // fresh one when its receipt disappears. Preserve it for reconciliation.
+        if(prior&&prior.status!=='NOT_FOUND'||['FAILED','UNCERTAIN','CONFLICT','COPYING','QUEUED'].includes(t.delivery_status)){
+          this.store.update(t,{delivery_status:'needs_review',message:'Prepared on MSI; the previously observed delivery receipt is unavailable. Review it before retrying.'});return;
+        }
+        try{await this.ingest(t);}catch(e){this.store.update(t,{delivery_status:'needs_review',message:'Prepared on MSI; delivery needs attention: '+e.message});}
+        return;
+      }
+      if(!['QUEUED','COPYING','COMPLETED','FAILED','UNCERTAIN'].includes(receipt.status)){
+        this.store.update(t,{delivery_status:'needs_review',delivery_receipt:receipt,message:'Prepared on MSI; delivery requires review: '+(receipt.error||receipt.status||'unknown receipt')});return;
+      }
+      this.store.update(t,{delivery_status:['FAILED','UNCERTAIN'].includes(receipt.status)?'needs_review':receipt.status,delivery_receipt:receipt,...(['FAILED','UNCERTAIN'].includes(receipt.status)?{message:'Prepared on MSI; delivery requires review: '+(receipt.error||receipt.status)}:{})});
+    }catch(e){this.status.interlinked=e.message;this.store.update(t,{delivery_status:'needs_review',message:'Prepared on MSI; waiting to reconcile delivery: '+e.message});}
+  }
   async prepareStaging(){
     const staging=contained(this.root,path.join(this.root,'staging'));fs.mkdirSync(staging,{recursive:true});ordinary(staging,{directory:true});
     if(!fs.existsSync(path.join(staging,'OWNER.json'))&&fs.readdirSync(staging).length)throw Error('Unowned staging directory contains existing files.');
@@ -120,14 +150,28 @@ export class Assistant {
     while(Date.now()<deadline){await this.sync();if(t.status==='failed'||t.status==='cancelled')throw Error(t.message||'Preview failed.');if(t.results){const a=t.results.manifest?.assets?.[0];if(!a)throw Error('Preview has no verified video output.');const preview_path=await this.remote.copyArtifact(a,path.join(this.root,'previews'));return {task_id:t.task_id,preview_path};}await new Promise(r=>setTimeout(r,750));}
     return {task_id:t.task_id,status:t.status,message:'Preview remains queued. Open task results when it completes.'};
   }
-  summary(project){const tasks=this.store.data.tasks.filter(t=>t.project_id===project);return {format:'buddy-project-report-v1',project_id:project,observed_at:new Date().toISOString(),counts:tasks.reduce((a,t)=>(a[t.status]=(a[t.status]||0)+1,a),{}),tasks:tasks.map(t=>({task_id:t.task_id,kind:t.kind,status:t.status,progress:t.progress,message:t.message,delivery_status:t.delivery_status||'not_delivered',outputs:t.delivery_receipt?.files||[],reviewed_by_user_at:t.reviewed_by_user_at||null}))};}
+  summary(project){const tasks=this.store.data.tasks.filter(t=>t.project_id===project);return {format:'buddy-project-report-v1',project_id:project,observed_at:new Date().toISOString(),counts:tasks.reduce((a,t)=>(a[t.status]=(a[t.status]||0)+1,a),{}),library_work:this.store.data.tasks.filter(t=>t.scope==='library').map(t=>({task_id:t.task_id,kind:t.kind,status:t.status,progress:t.progress,message:t.message})),tasks:tasks.map(t=>({task_id:t.task_id,kind:t.kind,status:t.status,progress:t.progress,message:t.message,delivery_status:t.delivery_status||'not_delivered',outputs:t.delivery_receipt?.files||[],reviewed_by_user_at:t.reviewed_by_user_at||null}))};}
   publishReports(){
     if(this.reporting||Date.now()-this.lastReportAttempt<15000)return;
     this.reporting=true;this.lastReportAttempt=Date.now();
-    (async()=>{for(const project of new Set(this.store.data.tasks.map(t=>t.project_id))){const summary=this.summary(project);const stable={...summary};delete stable.observed_at;const fingerprint=createHash('sha256').update(JSON.stringify(stable)).digest('hex');if(this.published.get(project)===fingerprint)continue;try{await this.interlinked.report(project,summary);this.published.set(project,fingerprint);}catch(e){this.status.interlinked=e.message;break;}}})().finally(()=>{this.reporting=false;});
+    (async()=>{for(const project of new Set(this.store.data.tasks.filter(t=>t.scope!=='library').map(t=>t.project_id))){const summary=this.summary(project);const stable={...summary};delete stable.observed_at;const fingerprint=createHash('sha256').update(JSON.stringify(stable)).digest('hex');if(this.published.get(project)===fingerprint)continue;try{await this.interlinked.report(project,summary);this.status.interlinked='Connected';this.published.set(project,fingerprint);}catch(e){this.status.interlinked=e.message;break;}}})().finally(()=>{this.reporting=false;});
   }
-  async report(format='markdown',project=this.project()){const summary=this.summary(project);const markdown=['# ED-IT Buddy project report','',`Project: ${project}`,`Observed: ${summary.observed_at}`,'',...summary.tasks.map(t=>`- ${t.kind}: ${t.status}; delivery: ${t.delivery_status}${t.message?' — '+t.message:''}`)].join('\n');let publication;try{await this.interlinked.report(project,summary);publication={status:'published'};}catch(e){publication={status:'failed',message:e.message};}return {summary,content:format==='json'?JSON.stringify(summary,null,2):markdown,markdown,publication};}
-  async chatTool(op,p,project){if(op==='tasks')return this.summary(project);if(op==='sources')return this.store.data.sources;if(op==='report')return this.report('markdown',project);if(['download','index','search','extract','organize'].includes(op))return this.queue(op,p,project);throw Error('Unsupported Buddy tool.');}
+  async report(format='markdown',project=this.project()){const summary=this.summary(project);const markdown=['# ED-IT Buddy project report','',`Project: ${project}`,`Observed: ${summary.observed_at}`,'',...summary.tasks.map(t=>`- ${t.kind}: ${t.status}; delivery: ${t.delivery_status}${t.message?' — '+t.message:''}`)].join('\n');let publication;try{await this.interlinked.report(project,summary);this.status.interlinked='Connected';publication={status:'published'};}catch(e){publication={status:'failed',message:e.message};}return {summary,content:format==='json'?JSON.stringify(summary,null,2):markdown,markdown,publication};}
+  async chatTool(op,p,project){
+    if(op==='tasks')return this.summary(project);
+    if(op==='sources')return this.store.data.sources;
+    if(op==='report')return this.report('markdown',project);
+    if(['results','control','ingest'].includes(op)){
+      const task=this.find(p.task_id);if(task.project_id!==project&&task.scope!=='library')throw Error('That task belongs to another project.');
+      if(op==='ingest'&&task.scope==='library')throw Error('Select or extract a clip into the current project before delivery.');
+      if(op==='results')return this.results(task);
+      if(op==='ingest')return this.ingest(task);
+      return this.handle('task_action',{task_id:task.task_id,action:p.action});
+    }
+    if(op==='preview'){const task=await this.queue('preview',p,project);return {task_id:task.task_id,status:task.status,message:'Preview is queued; use task results when complete.'};}
+    if(['download','index','search','extract','organize'].includes(op))return this.queue(op,p,project);
+    throw Error('Unsupported Buddy tool.');
+  }
   async handle(method,p={}){
     if(!p||typeof p!=='object'||Array.isArray(p))throw Error('Expected object parameters.');
     switch(method){

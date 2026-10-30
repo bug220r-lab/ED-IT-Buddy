@@ -5,7 +5,7 @@ patches project files or accepts shell commands. Request payloads stay in owned
 local state; the active launcher receives only an opaque request identifier.
 """
 from __future__ import annotations
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import ctypes
 import datetime as dt
 import hashlib
@@ -27,6 +27,7 @@ ID=re.compile(r'^[a-f0-9]{32}$')
 PREFIX='Drive_C/Users/jlewi/'
 MEDIA_ROOTS=('OneDrive/Documents','Downloads','OneDrive/Desktop','OneDrive/Pictures')
 MAX_MANIFEST=1024*1024
+CLIENT_SEAL_SHA='362517385124df2ad6d55363fc0b39d072b4378c11e3f468b1bfebf8bc21f3fc'
 
 def need(value,message):
     if not value:raise ValueError(message)
@@ -55,6 +56,58 @@ def digest(path):
     with leaf(path).open('rb') as src:
         for block in iter(lambda:src.read(1024*1024),b''):result.update(block)
     return result.hexdigest()
+
+@contextmanager
+def _runtime_reader(path):
+    """Ordinary read with a retained no-write/no-delete native file handle."""
+    path=leaf(path)
+    if os.name!='nt':
+        with path.open('rb') as stream:yield stream
+        return
+    import msvcrt
+    k=ctypes.WinDLL('kernel32',use_last_error=True)
+    k.CreateFileW.argtypes=[ctypes.c_wchar_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p];k.CreateFileW.restype=ctypes.c_void_p
+    k.CloseHandle.argtypes=[ctypes.c_void_p]
+    handle=k.CreateFileW(str(path),0x80000000,1,None,3,0x08200000,None)
+    if handle==ctypes.c_void_p(-1).value:raise ctypes.WinError(ctypes.get_last_error())
+    class Info(ctypes.Structure):
+        _pack_=4
+        _fields_=[('attrs',ctypes.c_uint32),('created',ctypes.c_uint64),('accessed',ctypes.c_uint64),('written',ctypes.c_uint64),('volume',ctypes.c_uint32),('hiSize',ctypes.c_uint32),('loSize',ctypes.c_uint32),('links',ctypes.c_uint32),('hiId',ctypes.c_uint32),('loId',ctypes.c_uint32)]
+    k.GetFileInformationByHandle.argtypes=[ctypes.c_void_p,ctypes.POINTER(Info)]
+    try:
+        info=Info()
+        if not k.GetFileInformationByHandle(handle,ctypes.byref(info)):raise ctypes.WinError(ctypes.get_last_error())
+        need(not info.attrs&(0x400|0x1000|0x40000|0x400000) and info.links==1,'Sealed runtime handle is linked/offline/recall.')
+        fd=msvcrt.open_osfhandle(handle,os.O_RDONLY|os.O_BINARY);handle=None
+        try:stream=os.fdopen(fd,'rb')
+        except BaseException:os.close(fd);raise
+        with stream:yield stream
+    finally:
+        if handle is not None:k.CloseHandle(handle)
+
+@contextmanager
+def _sealed_reads(root,seal_sha256,count):
+    """Prepare only the immutable accepted client set; never relax path guards."""
+    root=ordinary(root)
+    with ExitStack() as held:
+        seal=held.enter_context(_runtime_reader(root/'HELPER-CHECKSUMS.json'));raw=seal.read(MAX_MANIFEST+1)
+        need(len(raw)<=MAX_MANIFEST and hashlib.sha256(raw).hexdigest()==seal_sha256,'Immutable client seal differs.')
+        manifest=json.loads(raw.decode('utf-8-sig'))
+        need(manifest.get('format')=='project-library-client-checksums-v1' and len(manifest.get('files',[]))==count,'Unexpected sealed client set.')
+        names=set()
+        for row in manifest['files']:
+            rel=relative(row['path']);need(str(rel).casefold() not in names,'Duplicate sealed client path.');names.add(str(rel).casefold())
+            need(type(row['bytes']) is int and 0<=row['bytes']<=128*1024*1024 and re.fullmatch('[a-f0-9]{64}',row['sha256']),'Invalid sealed client entry.')
+            stream=held.enter_context(_runtime_reader(root.joinpath(*rel.parts)));result=hashlib.sha256();size=0
+            for block in iter(lambda:stream.read(1024*1024),b''):
+                size+=len(block);need(size<=row['bytes'],'Sealed client file grew.');result.update(block)
+            need(size==row['bytes'] and result.hexdigest()==row['sha256'],'Sealed client file differs: '+str(rel))
+        yield
+
+@contextmanager
+def sealed_client_reads(kit):
+    """Retain verified ordinary runtime files through the unchanged launcher."""
+    with _sealed_reads(Path(kit)/'Project-Library-Client',CLIENT_SEAL_SHA,52):yield
 def read(path,limit=MAX_MANIFEST):
     with leaf(path).open('rb') as stream:raw=stream.read(limit+1)
     need(len(raw)<=limit,'Metadata exceeds its size limit.')
@@ -116,7 +169,7 @@ def owned_state(root,identity):
     if marker.exists():need(read(marker)==identity,'Buddy state ownership differs.')
     else:
         need(not list(root.iterdir()),'Existing Buddy state is unowned.');write(marker,identity)
-    for name in ('requests','operations','reports'):
+    for name in ('requests','operations','reports','actions'):
         path=root/name
         if not path.exists():private_directory(path)
         ordinary(path)
@@ -259,9 +312,55 @@ class Companion:
         return dict(projects=rows,active_session=self.c.state().get('operation'),pending_ingest=self.pending)
     def project(self,project):
         rows=self.c.catalog()['projects'];matches=[r for r in rows if r.get('originalId',r['id'])==project];need(len(matches)==1,'Unknown or ambiguous project.');return matches[0]
+    def project_detail(self,project):
+        row=self.project(project);entries=self.c.entries(row['id']).get('entries',[])
+        return dict(project_id=project,name=row['name'],entries=[dict(entry_id=hashlib.sha256((project+'\0'+entry['path']).encode('utf-8')).hexdigest(),label=Path(entry['path']).name,kind=entry.get('kind'),origin=entry.get('origin','INDEXED')) for entry in entries[:1000]],total_entries=len(entries),entries_truncated=len(entries)>1000)
+    def action(self,body):
+        need(isinstance(body,dict) and body.get('action') in ('open','save','verify'),'Only explicit open, save and verify actions are supported.')
+        allowed={'request_id','project_id','action','entry_id'} if body['action']=='open' else {'request_id','project_id','action'}
+        need(set(body)==allowed,'Unexpected lifecycle action fields.')
+        request_id=rid(body['request_id']);project=body['project_id'];row=self.project(project);entry=None
+        if body['action']=='open':
+            need(isinstance(body['entry_id'],str) and re.fullmatch('[a-f0-9]{64}',body['entry_id']),'Choose an enumerated entry ID.')
+            entries=self.c.entries(row['id']).get('entries',[])
+            matches=[item for item in entries if hashlib.sha256((project+'\0'+item['path']).encode('utf-8')).hexdigest()==body['entry_id']]
+            need(len(matches)==1,'Entry does not belong to the selected project or is no longer available.');entry=matches[0]['path']
+        fingerprint=hashlib.sha256(json.dumps(body,sort_keys=True,separators=(',',':')).encode('utf-8')).hexdigest();path=self.state/'actions'/(request_id+'.json')
+        with self.c.lock,self.lock:
+            need(not (self.state/'requests'/(request_id+'.json')).exists(),'Request ID already belongs to an asset delivery.')
+            if path.exists():
+                prior=read(path);need(prior.get('fingerprint')==fingerprint,'Lifecycle request ID reused with different work.');return self.operation(request_id)
+            need(not self.pending,'Wait for the asset delivery to finish.')
+            record=dict(format='interlinked-buddy-action-v1',request_id=request_id,project_id=project,action=body['action'],fingerprint=fingerprint,status='STARTING',updated_at=utc())
+            write(path,record)
+            try:
+                job=self.c.start(body['action'],row['id'],entry,None,None)
+                record.update(operation_id=job['id'],operation_receipt=str(self.c.run/('operation-'+job['id']+'.json')),status=job['status']);write(path,record)
+                return self.operation(request_id)
+            except Exception as exc:
+                record.update(status='FAILED',error=str(exc));write(path,record);raise
+    def session_response(self,body):
+        need(set(body)=={'project_id','operation_id','prompt_generation','response'} and body['response']=='DONE','Only an explicit project-bound DONE response is supported.')
+        row=self.project(body['project_id']);rid(body['operation_id'])
+        need(type(body['prompt_generation']) is int and body['prompt_generation']>=1,'Current prompt generation required.')
+        with self.c.lock:
+            need(self.c.job and self.c.job.get('projectId')==row['id'],'Session belongs to another project.')
+            return self.c.session_input('DONE',body['operation_id'],body['prompt_generation'])
     def operation(self,request_id):
         path=self.state/'operations'/(rid(request_id)+'.json')
-        if not path.exists():return dict(request_id=request_id,status='NOT_FOUND')
+        if not path.exists():
+            action_path=self.state/'actions'/(request_id+'.json')
+            if not action_path.exists():return dict(request_id=request_id,status='NOT_FOUND')
+            value=read(action_path)
+            current=self.c.job if self.c.job and self.c.job.get('id')==value.get('operation_id') else None
+            if current is not None:
+                value=dict(value,status=current.get('status','UNKNOWN'),operation={k:current.get(k) for k in ('id','action','projectId','status','awaitingDone','promptGeneration','exitCode','error')})
+            elif value.get('operation_receipt'):
+                receipt=Path(value['operation_receipt']);need(receipt.is_relative_to(self.c.r.state),'Lifecycle receipt is outside owned GUI state.')
+                if receipt.exists():
+                    job=read(receipt);need(job.get('id')==value.get('operation_id'),'Lifecycle operation identity differs.')
+                    value=dict(value,status=job.get('status','UNKNOWN'),operation={k:job.get(k) for k in ('id','action','projectId','status','awaitingDone','promptGeneration','exitCode','error')})
+            return {k:v for k,v in value.items() if k not in ('operation_receipt','fingerprint')}
         result=read(path)
         if self.pending==request_id and result.get('status') in ('COMPLETED','FAILED','UNCERTAIN'):
             with self.lock:self.pending=None
@@ -272,6 +371,7 @@ class Companion:
         manifest,sha,_=load_manifest(Path(body['manifest_path']),self.staging,request_id,project)
         with self.c.lock,self.lock:
             need(not self.c.closing,'INTERLINKED is closing.')
+            need(not (self.state/'actions'/(request_id+'.json')).exists(),'Request ID already belongs to a lifecycle action.')
             request=dict(body,format='interlinked-buddy-request-v1',manifest_sha256=sha,staging_root=str(self.staging),session_id=self.c.job['id'] if self.c.job and self.c.job.get('action')=='open' else None)
             path=self.state/'requests'/(request_id+'.json')
             if path.exists():
@@ -413,6 +513,8 @@ def install(g):
         try:
             gate(handler);parsed=urlsplit(handler.path);service=handler.server.controller.buddy
             if parsed.path=='/api/buddy/projects' and not parsed.query:result=service.projects()
+            elif parsed.path=='/api/buddy/project':
+                query=parse_qs(parsed.query,strict_parsing=True);need(set(query)=={'project_id'} and len(query['project_id'])==1,'Choose one project.');result=service.project_detail(query['project_id'][0])
             elif parsed.path=='/api/buddy/operation':
                 query=parse_qs(parsed.query,strict_parsing=True);need(set(query)=={'request_id'} and len(query['request_id'])==1,'Select one request.');result=service.operation(query['request_id'][0])
             elif parsed.path=='/api/buddy/reports' and not parsed.query:result=dict(reports=[read(p) for p in service.state.joinpath('reports').glob('*.json')])
@@ -427,6 +529,8 @@ def install(g):
             body=json.loads(handler.rfile.read(length));need(isinstance(body,dict),'Object body required.')
             service=handler.server.controller.buddy
             if handler.path=='/api/buddy/ingest':result=service.ingest(body)
+            elif handler.path=='/api/buddy/action':result=service.action(body)
+            elif handler.path=='/api/buddy/session':result=service.session_response(body)
             elif handler.path=='/api/buddy/report':result=service.report(body)
             else:raise ValueError('Unknown companion route.')
             handler.respond(200,result)

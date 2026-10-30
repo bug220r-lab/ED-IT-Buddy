@@ -15,10 +15,80 @@ import ctypes
 import http.client
 import sys
 import subprocess
+from unittest.mock import patch
 
 HERE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('buddy_under_test',HERE/'interlinked_buddy.py')
 b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)
+
+class RuntimeAvailabilityTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory(prefix='buddy-sealed-runtime-');self.root=Path(self.tmp.name)
+        self.file=self.root/'generated-runtime.bin';self.file.write_bytes(b'isolated accepted runtime fixture')
+        self.manifest=dict(format='project-library-client-checksums-v1',files=[dict(path=self.file.name,bytes=self.file.stat().st_size,sha256=hashlib.sha256(self.file.read_bytes()).hexdigest())])
+        self.seal=self.root/'HELPER-CHECKSUMS.json';self.accept()
+    def tearDown(self):self.tmp.cleanup()
+    def accept(self):
+        self.seal.write_text(json.dumps(self.manifest));self.hash=hashlib.sha256(self.seal.read_bytes()).hexdigest()
+    def test_exact_sealed_set_is_retained_and_released(self):
+        before=self.file.read_bytes()
+        with b._sealed_reads(self.root,self.hash,1):
+            self.assertEqual(self.file.read_bytes(),before)
+            if os.name=='nt':
+                with self.assertRaises(OSError):self.file.rename(self.root/'renamed.bin')
+                with self.assertRaises(OSError):self.file.open('wb')
+        self.file.rename(self.root/'renamed.bin');self.assertEqual((self.root/'renamed.bin').read_bytes(),before)
+    def test_seal_tamper_refused(self):
+        self.seal.write_text('{}')
+        with self.assertRaisesRegex(ValueError,'seal differs'):
+            with b._sealed_reads(self.root,self.hash,1):self.fail('Unaccepted runtime reached caller')
+    def test_payload_hash_mismatch_refused(self):
+        self.file.write_bytes(b'x'*self.manifest['files'][0]['bytes'])
+        with self.assertRaisesRegex(ValueError,'file differs'):
+            with b._sealed_reads(self.root,self.hash,1):self.fail('Unaccepted runtime reached caller')
+    def test_payload_size_mismatch_refused(self):
+        self.file.write_bytes(self.file.read_bytes()+b'x')
+        with self.assertRaisesRegex(ValueError,'file grew'):
+            with b._sealed_reads(self.root,self.hash,1):self.fail('Unaccepted runtime reached caller')
+    def test_hardlinked_runtime_refused(self):
+        os.link(self.file,self.root/'second-name.bin')
+        with self.assertRaisesRegex(ValueError,'non-hardlinked'):
+            with b._sealed_reads(self.root,self.hash,1):self.fail('Linked runtime reached caller')
+    def test_runtime_manifest_cannot_escape_root(self):
+        self.manifest['files'][0]['path']='../outside.bin';self.accept()
+        with self.assertRaisesRegex(ValueError,'Unsafe relative'):
+            with b._sealed_reads(self.root,self.hash,1):self.fail('Escaped runtime reached caller')
+    def test_true_native_recall_is_refused_before_read(self):
+        real_lstat=os.lstat
+        def lstat(path,*args,**kwargs):
+            result=real_lstat(path,*args,**kwargs)
+            if Path(path)==self.file:return types.SimpleNamespace(st_mode=result.st_mode,st_file_attributes=0x40020)
+            return result
+        class NativeFunction:
+            def __call__(self,path):return 0x40020
+        with patch.object(b.os,'lstat',side_effect=lstat),patch.object(b.ctypes,'WinDLL',return_value=types.SimpleNamespace(GetFileAttributesW=NativeFunction())):
+            with self.assertRaisesRegex(ValueError,'offline placeholders'):b.ordinary(self.file)
+    def test_native_offline_paths_are_refused_before_read(self):
+        real_lstat=os.lstat
+        def lstat(path,*args,**kwargs):
+            result=real_lstat(path,*args,**kwargs)
+            if Path(path)==self.file:return types.SimpleNamespace(st_mode=result.st_mode,st_file_attributes=0x1020)
+            return result
+        with patch.object(b.os,'lstat',side_effect=lstat):
+            with self.assertRaisesRegex(ValueError,'offline placeholders'):b.ordinary(self.file)
+    def test_generated_launcher_retains_reads_for_open_save_and_verify(self):
+        path=HERE/'candidate/repository/work/magix-buddy/candidate/magix_projects.py'
+        spec=importlib.util.spec_from_file_location('synthetic_buddy_launcher',path);launcher=importlib.util.module_from_spec(spec);spec.loader.exec_module(launcher)
+        events=[]
+        @contextlib.contextmanager
+        def held():
+            events.append('enter')
+            try:yield
+            finally:events.append('exit')
+        def run(args):self.assertEqual(events[-1],'enter');events.append(args.action);return 0
+        for action in ('open','save','verify'):
+            with patch.object(launcher,'sealed_runtime',held),patch.object(launcher,'run_action',run),patch.object(sys,'argv',['generated',action,'--project','synthetic']):self.assertEqual(launcher.main(),0)
+        self.assertEqual(events,['enter','open','exit','enter','save','exit','enter','verify','exit'])
 
 class IngestTests(unittest.TestCase):
     def setUp(self):
@@ -166,6 +236,42 @@ class HttpTests(unittest.TestCase):
         tasks=[dict(task_id=str(i),kind='index',status='completed',delivery_status='not_delivered') for i in range(101)]+[dict(task_id='failure',kind='download',status='failed',delivery_status='not_delivered',message='Source unavailable')]
         status,_=self.request('/api/buddy/report','POST',dict(project_id='demo-project-1',summary=dict(tasks=tasks)));self.assertEqual(status,200)
         status,result=self.request('/api/buddy-report?project=demo-project-1',headers={'X-INTERLINKED-Token':self.server.token});self.assertEqual(status,200);self.assertEqual(result['counts']['total'],102);self.assertEqual(result['counts']['prepared'],101);self.assertEqual(len(result['tasks']),100);self.assertTrue(result['truncated']);self.assertEqual(result['tasks'][0]['task_id'],'failure')
+    def test_project_detail_exposes_enumerated_ids_not_arbitrary_paths(self):
+        status,result=self.request('/api/buddy/project?project_id=demo-project-1');self.assertEqual(status,200);self.assertEqual(len(result['entries']),2)
+        self.assertRegex(result['entries'][0]['entry_id'],'^[a-f0-9]{64}$');self.assertNotIn('path',result['entries'][0])
+        status,_=self.request('/api/buddy/project?project_id=unknown');self.assertEqual(status,403)
+    def test_lifecycle_rejects_destructive_or_arbitrary_actions(self):
+        for action in ('release','recover','quit','shell'):
+            status,_=self.request('/api/buddy/action','POST',dict(request_id='9'*32,project_id='demo-project-1',action=action));self.assertEqual(status,409)
+    def test_enumerated_open_delegates_once_and_reuses_receipt(self):
+        entry=self.controller.buddy.project_detail('demo-project-1')['entries'][0];calls=[]
+        def start(*args):calls.append(args);return dict(id='8'*32,status='COMPLETED')
+        self.controller.start=start
+        body=dict(request_id='7'*32,project_id='demo-project-1',action='open',entry_id=entry['entry_id'])
+        status,result=self.request('/api/buddy/action','POST',body);self.assertEqual(status,200);self.assertEqual(result['operation_id'],'8'*32)
+        status,_=self.request('/api/buddy/action','POST',body);self.assertEqual(status,200);self.assertEqual(len(calls),1);self.assertEqual(calls[0][0:2],('open','demo-project-1'));self.assertTrue(calls[0][2].endswith('.MVP'))
+        status,_=self.request('/api/buddy/action','POST',dict(request_id='7'*32,project_id='demo-project-1',action='verify'));self.assertEqual(status,409)
+    def test_entry_identity_cannot_cross_projects(self):
+        entry=self.controller.buddy.project_detail('demo-project-1')['entries'][0]
+        status,_=self.request('/api/buddy/action','POST',dict(request_id='6'*32,project_id='demo-project-2',action='open',entry_id=entry['entry_id']));self.assertEqual(status,409)
+        status,_=self.request('/api/buddy/action','POST',dict(request_id='6'*32,project_id='demo-project-1',action='open',entry_id='../file.MVP'));self.assertEqual(status,409)
+    def test_lifecycle_extra_fields_cannot_introduce_commands(self):
+        status,_=self.request('/api/buddy/action','POST',dict(request_id='5'*32,project_id='demo-project-1',action='verify',command='whoami'));self.assertEqual(status,409)
+    def test_native_done_rejects_stale_session_prompt_and_project(self):
+        self.controller.job=dict(id='4'*32,action='open',projectId='demo-project-1',status='WAITING_FOR_MAGIX',awaitingDone=True,promptGeneration=3)
+        body=dict(project_id='demo-project-1',operation_id='4'*32,prompt_generation=3,response='DONE')
+        try:
+            for changed in ({'operation_id':'3'*32},{'prompt_generation':2},{'project_id':'demo-project-2'}):
+                status,_=self.request('/api/buddy/session','POST',dict(body,**changed));self.assertEqual(status,409)
+        finally:self.controller.job['status']='COMPLETED'
+    def test_native_done_delegates_existing_checks_and_never_saves(self):
+        self.controller.job=dict(id='2'*32,action='open',projectId='demo-project-1',status='WAITING_FOR_MAGIX',awaitingDone=True,promptGeneration=1);calls=[]
+        self.controller.session_input=lambda *args:(calls.append(args) or dict(status='RESPONSE_SENT',automaticSave=False,automaticRelease=False))
+        try:
+            body=dict(project_id='demo-project-1',operation_id='2'*32,prompt_generation=1,response='DONE')
+            status,result=self.request('/api/buddy/session','POST',body);self.assertEqual(status,200);self.assertEqual(calls,[('DONE','2'*32,1)]);self.assertFalse(result['automaticSave'])
+            status,_=self.request('/api/buddy/session','POST',dict(body,response='CANCEL STARTUP'));self.assertEqual(status,409)
+        finally:self.controller.job['status']='COMPLETED'
     def test_staging_escape_refused(self):
         status,result=self.request('/api/buddy/ingest','POST',dict(project_id='demo-project-1',request_id='0'*32,manifest_path=str(self.controller.r.state/'OWNER.json')));self.assertEqual(status,409)
     def test_receipt_not_found_is_observation(self):

@@ -6,6 +6,9 @@ import json
 import math
 import re
 import shutil
+import os
+import socket
+import sys
 import time
 from pathlib import Path
 
@@ -70,7 +73,8 @@ class SiglipEncoder:
             return self._features(self.model.get_text_features(**inputs))[0]
 
     def facts(self):
-        return {"cuda": True, "device": self.torch.cuda.get_device_name(0), "torch": self.torch.__version__, "cuda_runtime": self.torch.version.cuda, "model_loaded": True, "batch_size": self.batch_size, "gpu_allocated_bytes": self.torch.cuda.memory_allocated(0), "gpu_reserved_bytes": self.torch.cuda.memory_reserved(0)}
+        import importlib.metadata
+        return {"cuda": True, "device": self.torch.cuda.get_device_name(0), "torch": self.torch.__version__, "transformers": importlib.metadata.version("transformers"), "pillow": importlib.metadata.version("Pillow"), "cuda_runtime": self.torch.version.cuda, "compute_capability": list(self.torch.cuda.get_device_capability(0)), "gpu_total_bytes": self.torch.cuda.get_device_properties(0).total_memory, "model_loaded": True, "batch_size": self.batch_size, "gpu_allocated_bytes": self.torch.cuda.memory_allocated(0), "gpu_reserved_bytes": self.torch.cuda.memory_reserved(0), "gpu_peak_allocated_bytes": self.torch.cuda.max_memory_allocated(0)}
 
 
 def encoder(engine):
@@ -94,11 +98,13 @@ def preflight(engine):
     images = model.images([picture])
     if len(images) != 1 or len(images[0]) != len(vector) or not all(math.isfinite(x) for x in images[0]):
         raise BuddyError("preflight_failed", "The local model did not produce a compatible finite image embedding.")
-    return {"passed": True, "observed_at": time.time(), "elapsed_seconds": time.monotonic() - started, "dimensions": len(vector), "model_revision": engine.config.get("model_revision"), "runtime": model.facts() if hasattr(model, "facts") else {"test_encoder": True}}
+    source_root = Path(__file__).parent
+    sources = {name: hashlib.sha256((source_root / name).read_bytes()).hexdigest() for name in ("core.py", "jobs.py", "vision.py", "worker.py")}
+    return {"passed": True, "observed_at": time.time(), "elapsed_seconds": time.monotonic() - started, "dimensions": len(vector), "model_revision": engine.config.get("model_revision"), "host": socket.gethostname(), "process_id": os.getpid(), "python_executable": sys.executable, "python_version": sys.version, "source_sha256": sources, "runtime": model.facts() if hasattr(model, "facts") else {"test_encoder": True}}
 
 
 def _profile(engine, interval, start=0, end=None):
-    identity = {"model_revision": engine.config.get("model_revision", "test"), "sample_seconds": float(interval), "start_seconds": float(start), "end_seconds": float(end) if end is not None else None, "pipeline": "pts-select-v1"}
+    identity = {"model_revision": engine.config.get("model_revision", "test"), "sample_seconds": float(interval), "start_seconds": float(start), "end_seconds": float(end) if end is not None else None, "pipeline": "pts-select-trim-v2"}
     return hashlib.sha256(canonical(identity).encode()).hexdigest()[:32]
 
 
@@ -171,7 +177,9 @@ def index_unit(engine, job):
                 inside(old, frames, directory=False).unlink()
             log = directory / "tools.log"
             offset = log.stat().st_size if log.exists() else 0
-            args = ["-hide_banner", "-v", "info", "-nostdin", "-n", "-threads", "2", "-ss", str(start), "-i", str(source), "-t", str(end - start), "-an", "-vf", f"select='isnan(prev_selected_t)+gte(t-prev_selected_t,{interval})',showinfo,scale=384:-2", "-fps_mode", "vfr", "-frames:v", str(math.ceil(60 / interval) + 2), "-q:v", "4", str(frames / "frame-%06d.jpg")]
+            # Output -t acts after filters and can log one frame that image2 never
+            # emits. Trim before showinfo so each timestamp has exactly one JPEG.
+            args = ["-hide_banner", "-v", "info", "-nostdin", "-n", "-threads", "2", "-ss", str(start), "-i", str(source), "-t", str(end - start), "-an", "-vf", f"trim=duration={end - start},select='isnan(prev_selected_t)+gte(t-prev_selected_t,{interval})',showinfo,scale=384:-2", "-fps_mode", "vfr", "-frames:v", str(math.ceil(60 / interval) + 2), "-q:v", "4", str(frames / "frame-%06d.jpg")]
             tool(engine, job, "ffmpeg", args, timeout=600)
             with log.open("rb") as stream:
                 stream.seek(offset)

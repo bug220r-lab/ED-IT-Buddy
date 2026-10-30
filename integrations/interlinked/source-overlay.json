@@ -4,50 +4,50 @@
   "files": [
     {
       "path": "repository/app/interlinked_gui.py",
-      "before_sha256": "dd830e8ee31a2f79d0bbc21758c76cc66d2b230bbe7bf30d0c63be04ca876de5",
+      "before_sha256": "91372140975dc34f3232ab68419b3145f43dce196ae1ec15c0615951da3cd83a",
       "source_path": "repository/app/interlinked_gui.py",
-      "source_sha256": "dd830e8ee31a2f79d0bbc21758c76cc66d2b230bbe7bf30d0c63be04ca876de5",
-      "sha256": "5700421af16ff3f6537b7d6f0f87b38e2fa2c599a16193c92b10ac3a27b73482"
+      "source_sha256": "91372140975dc34f3232ab68419b3145f43dce196ae1ec15c0615951da3cd83a",
+      "sha256": "6f5028eaa8f9851440b82fdcf411645bcb866bfb8e6bb669fe48098fedd90e0f"
     },
     {
       "path": "repository/app/interlinked_controller.py",
-      "before_sha256": "e08d357aec6d470d5df29e3e810f1e1b54ff6830fd768bedb3e9082e324d4958",
+      "before_sha256": "093cd4d17dc32251c98c8fbaf54d8fe2dc4467ac7e3ac3ca9bebda631fbee8a0",
       "source_path": "repository/app/interlinked_controller.py",
-      "source_sha256": "e08d357aec6d470d5df29e3e810f1e1b54ff6830fd768bedb3e9082e324d4958",
+      "source_sha256": "093cd4d17dc32251c98c8fbaf54d8fe2dc4467ac7e3ac3ca9bebda631fbee8a0",
       "sha256": "093cd4d17dc32251c98c8fbaf54d8fe2dc4467ac7e3ac3ca9bebda631fbee8a0"
     },
     {
       "path": "repository/work/magix-buddy/candidate/magix_projects.py",
-      "before_sha256": null,
+      "before_sha256": "291a4f48adf614d2d1dfdca4a196937eef6dcabb671c9baec701baa15c7c7491",
       "source_path": "repository/work/magix-all-projects/candidate/magix_projects.py",
       "source_sha256": "6c2ea58d9ac89a20c4b2bb42347b79f5802b049b2c81812314e09412578de1bf",
-      "sha256": "820d01eae1f65f5b030c1f0f3a12bbe02d335963a3ff131e06f63e3e43bef2db"
+      "sha256": "29434d26caa8c656ea6fd181d2a0d79e3eaad2a56b77e6b8bfae5751e22205b9"
     },
     {
       "path": "repository/app/web/app.js",
-      "before_sha256": "2a28dbb5318f1faea37e3b29582d8534b65266701ff16dcd3b51991fc8129d3e",
+      "before_sha256": "ee14203d27f27a1a847efee6f828e6ac7325e6d3d22da17585ab76e8855122fb",
       "source_path": "repository/app/web/app.js",
-      "source_sha256": "2a28dbb5318f1faea37e3b29582d8534b65266701ff16dcd3b51991fc8129d3e",
-      "sha256": "7183f7dbc7c644b4fc7d7d6da08fe4f12ac1fbdd82d9cff7fe2d6d876a304ea4"
+      "source_sha256": "ee14203d27f27a1a847efee6f828e6ac7325e6d3d22da17585ab76e8855122fb",
+      "sha256": "f8f554aa11a1b6ba0eec397f62c37d39fee1ed55f4c9e49f8e1bd96fdf828b80"
     },
     {
       "path": "repository/app/web/index.html",
-      "before_sha256": "a00f89ac88271af95ecc7c7fd13d331537e075e115c7a087e36000426033156e",
+      "before_sha256": "e765b5aa189154c74b942bf7105fc5dfb5b16234e76a9d22c75dcfb6b4810c10",
       "source_path": "repository/app/web/index.html",
-      "source_sha256": "a00f89ac88271af95ecc7c7fd13d331537e075e115c7a087e36000426033156e",
+      "source_sha256": "e765b5aa189154c74b942bf7105fc5dfb5b16234e76a9d22c75dcfb6b4810c10",
       "sha256": "e765b5aa189154c74b942bf7105fc5dfb5b16234e76a9d22c75dcfb6b4810c10"
     },
     {
       "path": "repository/app/web/style.css",
-      "before_sha256": "b7c25ed07dbf19fbaf4654e131bf3191869df17a49632c9287be9a61000f1e59",
+      "before_sha256": "7adbdf7f320ba3dd188a243039dc0ffce2399e240e99085b3989501560f4da7f",
       "source_path": "repository/app/web/style.css",
-      "source_sha256": "b7c25ed07dbf19fbaf4654e131bf3191869df17a49632c9287be9a61000f1e59",
-      "sha256": "8364439ed3b9fc5ad628ade28e86468dea67a3cc50ac7cf25716b893980564e8"
+      "source_sha256": "7adbdf7f320ba3dd188a243039dc0ffce2399e240e99085b3989501560f4da7f",
+      "sha256": "72ed4f1e1e003aa069990810cdb33b4d1f7a3f257a5a6faceb30f122d8ee6817"
     },
     {
       "path": "repository/app/interlinked_buddy.py",
-      "before_sha256": null,
-      "sha256": "6fad875559ba94d43a27fdb279933b728e80da91e714cb85a15ccc018580f809"
+      "before_sha256": "c1403c762e8bfb8908935bdf1af2b442fd329912073eefc4dac1675fc8389f5f",
+      "sha256": "001d5f04fb69c7e12ec7538f1843ad572cd497447d09c381e237c1c757dfba4d"
     }
   ],
   "required_gui_seal": {
@@ -55,7 +55,7 @@
     "additional_files": [
       "interlinked_buddy.py"
     ],
-    "magix_sha256": "820d01eae1f65f5b030c1f0f3a12bbe02d335963a3ff131e06f63e3e43bef2db",
+    "magix_sha256": "29434d26caa8c656ea6fd181d2a0d79e3eaad2a56b77e6b8bfae5751e22205b9",
     "frozen_base_unchanged": true
   },
   "publication_deferred": true

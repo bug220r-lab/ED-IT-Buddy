@@ -31,7 +31,7 @@ namespace EditBuddy
     {
         internal Dictionary<string, object> Value;
         public string Id { get { return AssistantView.Text(Value, "task_id"); } }
-        public string Label { get { string delivery = AssistantView.Text(Value, "delivery_status"); string reviewed = AssistantView.Text(Value, "reviewed_by_user_at"); return AssistantView.Text(Value, "kind") + " · " + AssistantView.Text(Value, "status") + (delivery.Length > 0 ? " · delivery " + delivery : "") + (reviewed.Length > 0 ? " · reviewed by you" : "") + "\n" + AssistantView.Text(Value, "message"); } }
+        public string Label { get { string delivery = AssistantView.Text(Value, "delivery_status"); string reviewed = AssistantView.Text(Value, "reviewed_by_user_at"); string kind = AssistantView.Text(Value, "scope") == "library" ? "Library index" : AssistantView.Text(Value, "kind"); return kind + " · " + AssistantView.Text(Value, "status") + (delivery.Length > 0 ? " · delivery " + delivery : "") + (reviewed.Length > 0 ? " · reviewed by you" : "") + "\n" + AssistantView.Text(Value, "message"); } }
     }
 
     internal sealed class AssistantAssetRow

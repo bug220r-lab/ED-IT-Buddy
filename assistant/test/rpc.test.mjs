@@ -64,12 +64,12 @@ async function fixture(){
   if(asset.bytes!==undefined)assert.equal(bytes.length,asset.bytes);
   fs.mkdirSync(destination,{recursive:true});const target=path.join(destination,asset.sha256+path.extname(sourcePath));if(!fs.existsSync(target))fs.writeFileSync(target,bytes,{flag:'wx'});return target;
  };
- const published=[];let publisherOffline=false;
+ const published=[],deliveries=new Map();let publisherOffline=false;
  const interlinked={
   async projects(){return {projects:[{original_id:'band-project',name:'Band project'}]};},
   async report(project_id,summary){if(publisherOffline)throw Error('Synthetic INTERLINKED outage');published.push({project_id,summary});return {status:'published'};},
-  async ingest(request){return {status:'DELIVERED',request_id:request.request_id,files:[{project_relative_path:'BuddyAssets/fixture/preview.mp4'}]};},
-  async operation(){return {status:'DELIVERED'};}
+  async ingest(request){const receipt={status:'COMPLETED',request_id:request.request_id,project_id:request.project_id,files:[{project_relative_path:'BuddyAssets/fixture/preview.mp4'}]};deliveries.set(request.request_id,receipt);return receipt;},
+  async operation(request_id){return deliveries.get(request_id)||{status:'NOT_FOUND',request_id};}
  };
  const chatFactory=()=>({async start(){return {signed_in:true};},async login(){return {authUrl:'https://auth.openai.com/fixture-only'};},close(){}});
  const app=new Assistant({root:path.join(root,'local-state'),localAppData:root,config,remote,interlinked,chatFactory});
@@ -115,7 +115,7 @@ test('observing a queued task does not hide its later completed output assets',{
   const t=await f.app.handle('submit',{kind:'download',params:{urls:['https://example.com/individual-video']}});await f.app.sync();
   const waiting=await f.app.handle('results',{task_id:t.task_id});assert.deepEqual(waiting.results,[]);
   await f.mutate('complete',{job_id:t.remote_job_id,artifact:true,kind:'video'});await f.app.sync();
-  const done=await f.app.handle('results',{task_id:t.task_id});assert.equal(t.status,'completed');assert.equal(done.results.length,1);assert.ok(done.results[0].asset_id);assert.equal(t.delivery_status,'DELIVERED');
+  const done=await f.app.handle('results',{task_id:t.task_id});assert.equal(t.status,'completed');assert.equal(done.results.length,1);assert.ok(done.results[0].asset_id);assert.equal(t.delivery_status,'COMPLETED');
   assert.equal(fs.readFileSync(path.join(f.source,'wide-stage.mp4'),'utf8'),'Synthetic source bytes remain untouched.');
  }finally{await f.close();}
 });

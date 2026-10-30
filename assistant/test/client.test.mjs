@@ -9,6 +9,7 @@ import {Remote} from '../remote.mjs';
 import {CodexChat,CHAT_CONFIG} from '../codex.mjs';
 import {EventEmitter} from 'node:events';
 import {PassThrough} from 'node:stream';
+import {createHash} from 'node:crypto';
 
 function fixture(){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buddy-client-'));const calls=[];let offline=false,dropAck=false;const jobs=new Map();
@@ -57,3 +58,45 @@ test('a stale SSH child exit cannot kill the replacement connection',async()=>{
 });
 test('a stale Codex child cannot invalidate a new conversation transport',()=>{const chat=new CodexChat({threads:{}});const old={kill(){throw Error('must not kill');}};const replacement={kill(){throw Error('must not kill');}};chat.child=replacement;chat.fail(Error('old exit'),old);assert.equal(chat.child,replacement);});
 test('a corrupt ledger is preserved and its own startup lock is released',()=>{const root=fs.mkdtempSync(path.join(os.tmpdir(),'buddy-corrupt-'));try{fs.writeFileSync(path.join(root,'tasks.json'),'{corrupt');assert.throws(()=>new TaskStore(root));assert.equal(fs.readFileSync(path.join(root,'tasks.json'),'utf8'),'{corrupt');assert.equal(fs.existsSync(path.join(root,'client.lock')),false);}finally{fs.rmSync(root,{recursive:true,force:true});}});
+test('existing library indexing stays visible without publishing it as an unknown project',async()=>{const f=fixture();try{
+ const prior=f.app.remote.request;const reports=[];
+ const library={job_id:'index-existing',request_id:'library-request',kind:'index',project_id:'unregistered-library-test',params:{root_ids:['r1']},status:'running',created:Date.now()/1000,progress:{indexed_files:1,total_files:5}};
+ f.app.remote.request=async(method,p)=>method==='list_jobs'?{jobs:[library]}:method==='get_job'&&p.job_id===library.job_id?library:prior(method,p);
+ f.app.interlinked.report=async(project)=>{reports.push(project);if(project!=='project-1')throw Error('Unknown project');};
+ await f.app.reconnect();await f.app.handle('select_project',{project_id:'project-1'});f.app.connected=false;
+ assert.equal(f.app.tasks()[0].scope,'library');assert.equal(f.app.summary('project-1').tasks.length,0);assert.equal(f.app.summary('project-1').library_work.length,1);
+ await f.app.queue('search',{query:'guitars'});f.app.lastReportAttempt=0;f.app.publishReports();await new Promise(r=>setImmediate(r));
+ assert.deepEqual(reports,['project-1']);assert.equal(f.app.status.interlinked,'Connected');
+ await f.app.discoverLibraryJobs();assert.equal(f.app.store.data.tasks.filter(t=>t.remote_job_id===library.job_id).length,1);
+}finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}});
+
+function deliveryFixture(){
+ const f=fixture();const source=path.join(f.root,'verified-source.mp4');const bytes=Buffer.from('verified synthetic delivery');fs.writeFileSync(source,bytes);const sha256=createHash('sha256').update(bytes).digest('hex');
+ const asset={asset_id:'asset-'+sha256,absolute_path:source,relative_path:'clips/show.mp4',bytes:bytes.length,sha256,kind:'video'};
+ const original=f.app.remote.request;const receipts=new Map();let online=true,loseAck=false,responseStatus='COMPLETED',submissions=0,observations=0;
+ f.app.remote.request=async(method,p)=>{
+  if(method==='list_jobs')return {jobs:[]};
+  if(method==='get_results')return {manifest:{format:'buddy-media-manifest-v1',assets:[asset],results:[]}};
+  const result=await original(method,p);if(method==='submit_job')result.status='completed';return result;
+ };
+ f.app.remote.copyArtifact=async()=>source;f.app.prepareStaging=async()=>{};
+ f.app.interlinked.operation=async(id)=>{observations++;if(!online)throw Error('INTERLINKED offline');return receipts.get(id)||{request_id:id,status:'NOT_FOUND'};};
+ f.app.interlinked.ingest=async(request)=>{submissions++;if(!online)throw Error('INTERLINKED offline');const receipt={request_id:request.request_id,project_id:request.project_id,status:responseStatus,files:[{path:'BuddyAssets/'+request.request_id+'/clips/show.mp4',sha256}]};receipts.set(request.request_id,receipt);if(loseAck){loseAck=false;throw Error('Ingest acknowledgement lost');}return receipt;};
+ return {...f,source,receipts,get submissions(){return submissions;},get observations(){return observations;},setInterlinkedOnline(v){online=v;},loseIngestAck(){loseAck=true;},setReceiptStatus(v){responseStatus=v;},async task(){f.app.store.data.selected_project_id='project-1';return f.app.queue('download',{urls:['https://example.com/video']});}};
+}
+test('prepared delivery recovers after INTERLINKED reconnect without fetching its manifest again',async()=>{const f=deliveryFixture();try{
+ const t=await f.task();f.setInterlinkedOnline(false);await f.app.sync();assert.ok(t.results.manifest);assert.equal(t.delivery_status,'needs_review');assert.equal(f.submissions,0);
+ f.setInterlinkedOnline(true);await f.app.reconnect();assert.equal(t.delivery_status,'COMPLETED');assert.equal(f.submissions,1);await f.app.sync();assert.equal(f.submissions,1);
+ assert.equal(fs.readFileSync(f.source,'utf8'),'verified synthetic delivery');
+}finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}});
+test('lost ingest acknowledgement is reconciled from the stable receipt without a second ingestion',async()=>{const f=deliveryFixture();try{
+ const t=await f.task();f.loseIngestAck();await f.app.sync();assert.equal(t.delivery_status,'needs_review');assert.equal(f.submissions,1);assert.equal(f.receipts.get(t.request_id).status,'COMPLETED');
+ await f.app.reconnect();assert.equal(t.delivery_status,'COMPLETED');assert.equal(f.submissions,1);assert.equal(t.delivery_receipt.request_id,t.request_id);
+}finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}});
+test('an accepted delivery receipt progresses even after MSI disconnects',async()=>{const f=deliveryFixture();try{
+ const t=await f.task();f.setReceiptStatus('QUEUED');await f.app.sync();assert.equal(t.delivery_status,'QUEUED');assert.equal(f.submissions,1);
+ f.receipts.set(t.request_id,{request_id:t.request_id,project_id:t.project_id,status:'COMPLETED',files:[]});f.setOffline(true);await f.app.sync();assert.equal(t.delivery_status,'COMPLETED');assert.equal(f.submissions,1);
+}finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}});
+test('failed uncertain and conflicting delivery receipts remain reviewable and are never resubmitted',async()=>{
+ for(const status of ['FAILED','UNCERTAIN','CONFLICT']){const f=deliveryFixture();try{const t=await f.task();f.receipts.set(t.request_id,{request_id:t.request_id,project_id:t.project_id,status,error:'Retained transaction requires review'});await f.app.sync();assert.equal(t.delivery_status,'needs_review');assert.equal(f.submissions,0);f.receipts.delete(t.request_id);await f.app.sync();assert.equal(t.delivery_status,'needs_review');assert.equal(f.submissions,0);}finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}}
+});

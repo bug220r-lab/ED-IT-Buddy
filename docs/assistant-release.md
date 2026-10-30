@@ -1,54 +1,64 @@
-# ED-IT Buddy assistant preview
+# ED-IT Buddy 0.3.1 assistant preview
 
-The source now contains the Manager desktop interface, local task broker, MSI media engine, Codex chat adapter, and an INTERLINKED companion contribution. This is a development preview. The complete workflow has not passed live release acceptance.
+ED-IT Buddy now provides a desktop Manager, durable task broker, MSI media worker, Codex chat, and an installed INTERLINKED companion. Live checks include the normal desktop connection and chat workflow, delivery during a managed MAGIX edit, and explicit verified save-back. The preview remains `release_verified: false` while the real full-corpus retrieval evaluation remains incomplete.
 
 ## Start and data
 
-Build a separate portable preview with `./package-assistant.ps1` and open its `bin/ED-IT Buddy.exe`. The existing `bin` application is not overwritten. The Manager is the default tab; Guide, Review and Controls remain available. It starts disconnected. **Connect / refresh** starts the local broker and attempts the configured services. Sign-in and frame attachments are explicit actions.
+Run `./package-assistant.ps1` to create a separate portable package, then open its `bin/ED-IT Buddy.exe`. The historical `package.ps1` entry point forwards to this complete packager so the Manager always includes its broker. Existing `bin` and earlier packages are not replaced. The desktop file version is `0.3.1.0`, with informational version `0.3.1-preview`.
 
-The desktop requires Windows x64, .NET Framework 4.8, and Node 22.13 or newer. `EDIT_BUDDY_NODE` can select an existing Node executable. The broker reads `assistant/config.example.json` unless `EDIT_BUDDY_ASSISTANT_CONFIG` selects a private configuration file. `assistant/config.json` is ignored by Git. The example uses the established MSI account and SSH identity; it contains no credentials.
+The Manager is the default tab. Guide, Review, and Controls remain available. The Manager starts disconnected; **Connect / refresh** starts the local broker and checks MSI, INTERLINKED, and the existing Codex sign-in. **Sign in to Codex** and frame attachments are explicit actions. The legacy MAGIX review connection is separate and does not start automatically from the Manager.
 
-Tasks and per-project conversation IDs live under `%LOCALAPPDATA%\ED-IT Buddy\assistant`. Staging and preview caches are separate from original footage and INTERLINKED project files. The task ledger records execution, delivery and human review separately. Reports remain available locally if publication to INTERLINKED fails.
+Windows x64, .NET Framework 4.8, and Node 22.13 or newer are required. `EDIT_BUDDY_NODE` can select an existing Node executable. The broker reads `assistant/config.example.json` unless `EDIT_BUDDY_ASSISTANT_CONFIG` selects a private configuration file. The example targets the established MSI identity and immutable `v0.3.1` media-worker directory; it contains no credentials. Private `assistant/config.json` is ignored by Git.
 
-## Implemented source
+Tasks and per-project conversation IDs live under `%LOCALAPPDATA%\ED-IT Buddy\assistant`. Keep this default location outside source repositories so unrelated project-specific tools are not inherited by chat. Staging and preview caches are separate from original footage and managed project files. Execution, delivery, save-back, and human review are separate observations. Reports remain available locally if INTERLINKED publication fails.
 
-- The WPF Manager provides project selection, MSI folder registration/indexing, visual search results, preview playback, extraction, supplied-link download jobs, date/source/tag organization, task controls, chat attachments, and Markdown/JSON report exports.
-- The local broker queues work while MSI is unavailable and reconciles stable request IDs after a lost acknowledgement. UI controls and chat share task validation. The Codex adapter disables command/app/browser capabilities and rejects tool calls outside its Buddy dispatcher; real inference/tool isolation still needs acceptance.
-- The independent MSI engine uses SQLite jobs and receipts, source-scoped inventories, content fingerprints, isolated tool processes, per-job downloads, verified editor-compatible outputs, copy-first organization, and resumable 60-second indexing units. Completed generated media can be reused only through a verified committed output manifest.
-- Local SigLIP2 retrieval samples actual presentation timestamps, starts at two-second spacing, adapts GPU batches on memory exhaustion, groups results, and produces bounded preview proxies. The six-hour test uses synthetic timestamps and fake inference; it is not a real footage or GPU benchmark.
-- The INTERLINKED contribution adds scoped same-user discovery, additive ingestion through the active lock owner, durable delivery receipts and a separate project-report channel. Its candidate overlay is not merged or deployed into the shared checkout or installed kit.
+## Current behavior
 
-## Actual verification
+- Choose an INTERLINKED project, queue supplied URLs, register selected MSI footage folders, index and search visual moments, preview candidates, extract clips, and organize copies by date, source, or tag.
+- Clear requests can run through chat or normal controls. Copies retain existing original paths. Source files and the established downloader's shared archive and cleanup workflow remain intact.
+- Media jobs run on MSI independently of the SSH client. Buddy retains offline tasks and reconciles stable request IDs after reconnect. Existing library index jobs appear as **Library index** across project task views while retaining their original worker identity.
+- SigLIP2 analysis stays on MSI. Search returns source-linked candidate ranges and relative similarity scores, not certainty. Only a frame deliberately attached to chat is sent with that message.
+- Codex uses its required isolated tool-dispatch host, with command, editing, app, plugin, browser, and computer capabilities disabled separately. Before each inference, the complete inherited MCP catalog is checked. A late catalog triggers one process re-isolation with those exact servers disabled, followed by another empty-catalog check; persistent callable connector tools still cause a refusal before any user input is submitted.
+- INTERLINKED owns project selection, workspace locks, accepted file ingestion, and verified save-back. Automatic delivery never implies that a clip has been imported onto a MAGIX timeline or saved back to MSI.
 
-Verification passed: 28 Node broker/contract tests (including a real disposable Python RPC/SQLite engine), 22 media-worker tests, 32 WPF protocol/layout checks, 29 INTERLINKED companion tests and 18 report-renderer checks. The existing companion state suite also passed. The desktop layout was rendered and inspected without launching MAGIX. The companion fixtures use actual native locks/HTTP/ACL checks with synthetic project data; they do not establish a live MAGIX session.
+## Verification recorded on October 30, 2026
 
-The real Codex smoke attempt exited before an authentication reply. No successful streamed reply, live Buddy tool call, or attached-frame inference is claimed.
+| Check | Observed result and limit |
+| --- | --- |
+| Automated checks | 41 Node broker/contract tests, 22 media-worker tests, and 32 WPF protocol/layout checks passed. Existing companion-state and build-preservation tests also passed. The companion suite passed 45 Python native/HTTP/ownership/availability cases and 18 JavaScript report-renderer checks. |
+| Codex live connection | Existing sign-in succeeded. Replies streamed, one permitted read-only Buddy task tool executed, an explicitly attached red/blue synthetic image was recognized, and a shell request was refused without command, file, or MCP execution. No new login or credential inspection was needed. |
+| MSI GPU preflight | The scheduled-user `pythonw.exe` context passed image/text inference on the RTX 2070 Max-Q with CUDA 12.6, batch eight, and 768-dimensional features. This proves inference in the actual launch context, not library throughput. |
+| Real footage indexing and search | Three selected MSI sources were registered. The latest captured index observation was running at 89 of 122 files; searches already returned previewable ranges from real band footage. This is partial indexing, not a completed more-than-five-hour benchmark or a labeled retrieval-quality evaluation. |
+| Pause and reconnect | A running index paused at a checkpoint; the paused receipt survived a new connection. The resume request returned the same job queued, without creating duplicate work. |
+| Internet download | A supplied public W3C Sintel trailer URL completed on MSI, producing a verified H.264/AAC MP4 and source metadata. This tests that URL and the observed tools, not every supported website. |
+| Preview and extraction | An eight-second range from real band footage produced separate preview and extracted H.264/AAC outputs. Their byte sizes and SHA-256 values were verified after transfer to THIS-MACHINE. |
+| Connected broker and reporting | The real broker reported MSI, INTERLINKED, and Codex connected; discovered 135 projects, three sources, and one ongoing library index; returned 20 search candidates; streamed 62 Codex reply chunks; and published a project report. Chat read the delivered clip and library task without starting or changing work. |
+| Normal desktop workflow | A cold start of the compiled Manager connected all three services and displayed an accurate streamed read-only chat reply about the completed search, delivered clip, and ongoing library index. Tasks were not changed. This was repeated after the bounded chat-isolation recovery and delivery-reconnection fixes. |
+| Active-session delivery | The broker extracted an eight-second clip on MSI and automatically transferred it through INTERLINKED into a disposable managed MAGIX session while both native workflow/cache locks remained held. Physical and mapped-path readback matched its content hash. The original project bytes were preserved. This proves additive file availability, not automatic timeline import. |
+| Explicit save-back | The disposable MVP was saved and MAGIX closed normally, then the managed session finished. Explicit INTERLINKED Save + Verify and an independent Verify completed. The saved manifest retained all 264 original file contents and references, added the delivered clip and disposable MVP, and contained 266 files with no tombstones. Local cache release was not automatic. |
+| Sealed-runtime availability | The installed companion's guarded retained-read preflight passed after a fresh app start and again in a separate child process, without external manual warming. It validates the unchanged accepted 52-file runtime and its seal before holding ordinary read handles for the action. Actual offline, reparse, recall, link, and hash failures still refuse the operation. |
+| Packaging | The complete runtime allowlist, file hashes, x64/.NET metadata, broker version, and `v0.3.1` target passed. The actual packaged broker bootstrapped disconnected. Tampered-runtime and missing-broker fixture packages were rejected. |
 
-The earlier MSI runtime setup completed successfully at `C:\Users\jlewi\AppData\Local\ED-IT-Buddy-Media`. It installed separate Python 3.12.10, PyTorch 2.8.0+cu126, Transformers 4.57.1, Pillow 11.3.0 and NumPy 2.2.6. Model `google/siglip2-base-patch16-224` was downloaded at revision `75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2`. Installation logs and package reports remain on MSI. This establishes installation, not CUDA inference, worker deployment, or performance. Existing downloader scripts and INTERLINKED's sealed runtime were not changed.
+The isolated MSI runtime is under `C:\Users\jlewi\AppData\Local\ED-IT-Buddy-Media`: Python 3.12.10, PyTorch 2.8.0+cu126, Transformers 4.57.1, Pillow 11.3.0, and NumPy 2.2.6. Model `google/siglip2-base-patch16-224` is pinned to revision `75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2`. The deployment directory/task is `v0.3.1`; the existing capabilities engine's descriptive version field still reports `0.3.0`. The preflight records exact loaded source hashes, so deployment identity must not be inferred from that descriptive field alone. Existing downloader scripts and INTERLINKED's sealed base runtime were preserved.
 
-## Remaining release gates
+Private evidence remains in the developer workspace's ignored `.build` directory and is excluded from packages and Git. Principal records are `msi-preflight-v031.json`, `chat-live-1793371862868/validation.json` with adjacent provenance, `live-band-index-current.json`, `live-band-search-results.json`, `live-worker-controls.json`, the download/preview/extract result manifests and `live-copied-artifacts.json`, `live-broker-connect-result.json`, `live-broker-delivery-result.json`, `live-manager-ui-acceptance.json`, and `live-interlinked-acceptance.json`. The final companion publication receipt is under `interlinked-buddy-publish-kit-20261030T153949Z-50638278/receipt.json`; saved-version audit evidence is in `interlinked-saved-manifest-audit.json`.
 
-1. Establish a supported Codex connection and verify streaming, one allowed task tool, explicit frame input and refusal of unrelated tools in the actual application context.
-2. Review the INTERLINKED contribution with the shared app owner, update the current distribution/GUI seals, and deploy between sessions. Preserve concurrent MASTER/cooler work and historical pinned components.
-3. Deploy a fresh media-worker version, run the scheduled-user GPU preflight, and retain its receipt before enabling library indexing. `tools/Deploy-MsiMediaWorker.ps1` prepares this operation; it has been syntax-checked but not executed.
-4. Select actual MSI footage sources and evaluate more than five hours of real recordings and labeled visual queries. Record speed, memory use and retrieval usefulness.
-5. Test one selected URL against the actual source site, preview/extract its output, and deliver generated media during a disposable managed MAGIX session. Then complete the session and verify explicit INTERLINKED save-back.
+## Remaining acceptance work
 
-The stopped MSI MAGIX timeline-automation experiment remains stopped. This preview does not depend on that experiment or claim automatic timeline editing.
+Finish indexing the selected real corpus and evaluate more than five hours of recordings with labeled queries such as crowd shots, drummer close-ups, and wide stage views. Record processing speed, memory use, and usefulness of the top matches. The six-hour automated fixture uses synthetic timestamps and fake inference.
 
-## Implementation handoff
+The earlier MSI MAGIX timeline-automation experiment remains stopped. This assistant does not depend on it and does not claim automatic timeline editing.
 
-`package-assistant.ps1` creates an allowlisted portable preview with SHA-256 package hashes and `release_verified: false`. No personal task state, keys, media, models or source catalogs are packaged. Generated INTERLINKED candidate snapshots are ignored by Git because they contain the shared checkout's concurrent source. The reviewed extension, report component, overlay generator, hash manifest and tests are versioned; regenerate the candidate against the actual shared checkout before merging.
+## Build and verification commands
 
-Files added or changed for this implementation:
+```powershell
+node --test assistant/test/*.test.mjs
+python -B -m unittest discover -s tests -p test_media_worker.py -v
+.\tests\run-assistant-client-tests.ps1
+.\tests\run-companion-state-tests.ps1
+.\tests\run-build-tests.ps1
+.\package-assistant.ps1
+.\tests\check-assistant-package.ps1 -PackageDirectory '<new package folder>'
+```
 
-- Desktop: `src/App.cs`, `src/AssistantView.cs`, `src/AssistantProcessClient.cs`.
-- Local broker: `assistant/client.mjs`, `assistant/codex.mjs`, `assistant/interlinked.mjs`, `assistant/remote.mjs`, `assistant/state.mjs`, `assistant/config.example.json`, `assistant/package.json`.
-- Broker verification: `assistant/test/client.test.mjs`, `assistant/test/rpc.test.mjs`, `assistant/test/interlinked.test.mjs`.
-- MSI worker: `media_worker/__init__.py`, `media_worker/core.py`, `media_worker/jobs.py`, `media_worker/vision.py`, `media_worker/rpc.py`, `media_worker/worker.py`, `media_worker/config.example.json`, `media_worker/README.md`, `media_worker/runtime-installation.json`, `media_worker/requirements.installation.txt`.
-- INTERLINKED contribution: `integrations/interlinked/interlinked_buddy.py`, `prepare_candidate.py`, `source-overlay.json`, `buddy_report_panel.html`, `buddy_report_style.css`, `buddy_report_ui.js`, `test_buddy.py`, `test_report_ui.cjs`, and `README.md` within that directory.
-- Build/setup: `package-assistant.ps1`, `tools/Initialize-MsiMediaRuntime.ps1`, `tools/Deploy-MsiMediaWorker.ps1`.
-- Desktop/worker verification: `tests/AssistantProcessClientTests.cs`, `tests/run-assistant-client-tests.ps1`, `tests/run-companion-state-tests.ps1`, `tests/test_media_worker.py`.
-- Documentation and ignore rules: `README.md`, `.gitignore`, this status document, and the related band-options/integration/downloader-discovery notes.
-
-The existing changes to `PortalMain`, `PortalMasterStatus`, MAGIX ownership and portal validation belong to earlier work and are not part of this implementation's GitHub commit.
+The assistant packager includes only the explicit runtime/documentation allowlist and its complete SHA-256 manifest. It excludes keys, personal task state, media, models, private catalogs, and generated INTERLINKED snapshots. Unrelated pre-existing portal, MASTER-status, and MAGIX ownership work remains separate from this assistant release's changes.

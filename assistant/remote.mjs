@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {randomUUID,createHash} from 'node:crypto';
 import {ordinary,contained} from './state.mjs';
 
-const METHODS=new Set(['get_capabilities','register_source_root','list_source_roots','inventory','submit_job','list_jobs','get_job','pause_job','resume_job','cancel_job','get_results','preflight']);
+const METHODS=new Set(['get_capabilities','get_preflight','register_source_root','list_source_roots','inventory','submit_job','list_jobs','get_job','pause_job','resume_job','cancel_job','get_results']);
 function executable(name){return process.platform==='win32'?path.join(process.env.WINDIR||'C:\\Windows','System32','OpenSSH',name+'.exe'):name;}
 export function sshArgs(c){
   for(const k of ['host','identityFile','knownHostsFile','hostKeyAlias'])if(typeof c.ssh[k]!=='string'||/[\r\n\0]/.test(c.ssh[k]))throw Error('Invalid SSH configuration.');

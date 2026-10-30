@@ -1,5 +1,7 @@
 # ED-IT Buddy and INTERLINKED integration
 
+This document records the original integration design and inspected baseline. The companion and media workflow have since been implemented; see [current assistant verification and acceptance](assistant-release.md) for installed state and live results. Statements below about missing interfaces describe that original baseline.
+
 Direction agreed October 30, 2026: ED-IT Buddy should manage the busy work around editing. It should find useful moments in band footage, obtain requested internet video, organize media, track tasks and report results into INTERLINKED. INTERLINKED remains responsible for managed project workspaces, storage and verified save-back. MAGIX remains an editing application used within that workflow.
 
 ## Responsibilities

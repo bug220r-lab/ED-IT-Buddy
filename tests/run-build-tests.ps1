@@ -24,7 +24,7 @@ Write-Output 'PASS: compilation failure leaves both prior executables unchanged.
 & (Join-Path $fixture 'build.ps1') -OutputDirectory 'bin' | Out-Null
 foreach ($name in @('ED-IT Buddy.exe', 'ED-IT Buddy.Probe.exe')) {
     $file = Join-Path $fixture "bin\$name"
-    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($file).FileVersion -ne '0.1.0.0') { throw "Version not embedded: $name" }
+    if ([Diagnostics.FileVersionInfo]::GetVersionInfo($file).FileVersion -ne '0.3.1.0') { throw "Version not embedded: $name" }
     if (!(Test-Path -LiteralPath ($file + '.config'))) { throw "Runtime config not published: $name" }
 }
 $backups = @(Get-ChildItem -LiteralPath (Join-Path $fixture '.build') -Directory -Filter 'previous-*')
