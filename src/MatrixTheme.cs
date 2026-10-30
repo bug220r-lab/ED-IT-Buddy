@@ -28,6 +28,17 @@ namespace EditBuddy
 
         internal static void Apply(Window window)
         {
+            using (var iconStream = typeof(MatrixTheme).Assembly.GetManifestResourceStream("EditBuddy.ApplicationIcon"))
+            {
+                if (iconStream != null)
+                {
+                    var icon = System.Windows.Media.Imaging.BitmapFrame.Create(iconStream,
+                        System.Windows.Media.Imaging.BitmapCreateOptions.None,
+                        System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+                    icon.Freeze();
+                    window.Icon = icon;
+                }
+            }
             window.Resources.MergedDictionaries.Add((ResourceDictionary)XamlReader.Parse(Styles));
             window.Background = Background;
             window.Foreground = Ink;

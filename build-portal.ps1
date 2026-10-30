@@ -14,6 +14,8 @@ foreach($reference in @('System.dll','System.Core.dll','System.Security.dll','Sy
     $portalArgs+='/reference:'+$path
 }
 $portalArgs+='/win32manifest:'+(Join-Path $portalBuildRoot 'src\app.manifest')
+$portalArgs+='/win32icon:'+(Join-Path $portalBuildRoot 'src\assets\ed-it-buddy.ico')
+$portalArgs+='/resource:'+(Join-Path $portalBuildRoot 'src\assets\ed-it-buddy.ico')+',EditBuddy.ApplicationIcon'
 $portalSources=@(Get-ChildItem -LiteralPath (Join-Path $portalBuildRoot 'src') -Filter '*.cs' -File | Where-Object {$_.Name -notin @('App.cs','ReviewStore.cs','ProbeMain.cs')} | ForEach-Object {$_.FullName})
 $portalStage=Join-Path $portalBuildRoot ('.build\portal-compile-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $portalStage -Force | Out-Null

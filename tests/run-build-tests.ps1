@@ -4,6 +4,7 @@ $fixture = Join-Path $buddyRoot ('.build\build-tests-' + [Guid]::NewGuid().ToStr
 New-Item -ItemType Directory -Path (Join-Path $fixture 'src') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $fixture 'bin') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $buddyRoot 'build.ps1') -Destination (Join-Path $fixture 'build.ps1')
+Copy-Item -LiteralPath (Join-Path $buddyRoot 'src\assets') -Destination (Join-Path $fixture 'src\assets') -Recurse
 foreach ($name in @('app.manifest', 'App.config', 'AssemblyInfo.cs')) {
     Copy-Item -LiteralPath (Join-Path $buddyRoot "src\$name") -Destination (Join-Path $fixture "src\$name")
 }

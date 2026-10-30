@@ -42,6 +42,8 @@ foreach ($reference in $references) {
     $arguments += "/reference:$referencePath"
 }
 $arguments += '/win32manifest:' + (Join-Path $buddyRoot 'src\app.manifest')
+$arguments += '/win32icon:' + (Join-Path $buddyRoot 'src\assets\ed-it-buddy.ico')
+$arguments += '/resource:' + (Join-Path $buddyRoot 'src\assets\ed-it-buddy.ico') + ',EditBuddy.ApplicationIcon'
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $buddyRoot 'src') -File -Filter '*.cs' | Where-Object { $_.Name -notlike 'Portal*.cs' -and $_.Name -notlike 'MagixEditing*.cs' } | Sort-Object Name)
 $appSources = @($sources | Where-Object { $_.Name -ne 'ProbeMain.cs' } | ForEach-Object { $_.FullName })
 $probeSources = @($sources | Where-Object { $_.Name -notin @('App.cs', 'ReviewStore.cs') } | ForEach-Object { $_.FullName })
