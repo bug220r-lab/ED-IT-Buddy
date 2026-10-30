@@ -70,6 +70,27 @@ test('existing library indexing stays visible without publishing it as an unknow
  await f.app.discoverLibraryJobs();assert.equal(f.app.store.data.tasks.filter(t=>t.remote_job_id===library.job_id).length,1);
 }finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}});
 
+for(const example of [
+ {name:'completed index',status:'completed',results:[{},{}],skipped:[{reason:'magix_proxy_original_indexed'}],failures:[],message:'Indexed 2 files; skipped 1 MAGIX proxy; 0 need review.'},
+ {name:'index with genuine failures',status:'needs_review',results:Array(109).fill({}),skipped:Array(11).fill({reason:'magix_proxy_original_indexed'}),failures:[{},{}],message:'Indexed 109 files; skipped 11 MAGIX proxies; 2 need review.'},
+ {name:'legacy index without skips',status:'completed',results:[{}],failures:[],message:'Indexed 1 file; skipped 0 MAGIX proxies; 0 need review.'}
+])test(example.name+' keeps its distinct outcome counts across repeated polls',async()=>{const f=fixture();try{
+ f.app.store.data.selected_project_id='project-1';const task=await f.app.queue('index',{root_ids:['r1']});task.remote_job_id=task.request_id;task.status='running';
+ const job={job_id:task.request_id,status:example.status,progress:{stage:'last decoded file'}};f.jobs.set(task.request_id,job);
+ const original=f.app.remote.request;let fetches=0;
+ f.app.remote.request=async(method,p)=>{if(method==='get_results'){fetches++;return {manifest:{kind:'index',results:example.results,...(example.skipped?{skipped:example.skipped}:{}),failures:example.failures}};}return original(method,p);};
+ await f.app.sync();assert.equal(task.message,example.message);assert.equal(task.status,example.status);
+ job.progress.stage='a later stale worker stage';await f.app.sync();assert.equal(task.message,example.message);assert.equal(fetches,1);
+ assert.equal(f.app.summary('project-1').tasks[0].message,example.message);
+ assert.equal(f.calls.some(call=>call.method==='submit_job'),false);
+}finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}});
+test('index outcome summaries do not replace messages for other job kinds',async()=>{const f=fixture();try{
+ f.app.store.data.selected_project_id='project-1';const task=await f.app.queue('search',{query:'drummer'});task.remote_job_id=task.request_id;task.status='running';
+ f.jobs.set(task.request_id,{job_id:task.request_id,status:'completed',message:'Worker search completed',progress:{}});
+ const original=f.app.remote.request;f.app.remote.request=async(method,p)=>method==='get_results'?{manifest:{results:[{}],skipped:[{reason:'magix_proxy_original_indexed'}],failures:[]}}:original(method,p);
+ await f.app.sync();await f.app.sync();assert.equal(task.message,'Worker search completed');assert.equal(task.kind,'search');
+}finally{f.app.close();fs.rmSync(f.root,{recursive:true,force:true});}});
+
 function deliveryFixture(){
  const f=fixture();const source=path.join(f.root,'verified-source.mp4');const bytes=Buffer.from('verified synthetic delivery');fs.writeFileSync(source,bytes);const sha256=createHash('sha256').update(bytes).digest('hex');
  const asset={asset_id:'asset-'+sha256,absolute_path:source,relative_path:'clips/show.mp4',bytes:bytes.length,sha256,kind:'video'};

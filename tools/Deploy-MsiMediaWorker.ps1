@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Version='v0.3.1',[switch]$RunPreflightAndStart,[switch]$StartOnly,[switch]$ReuseConfiguration)
+param([string]$Version='v0.3.2',[switch]$RunPreflightAndStart,[switch]$StartOnly,[switch]$ReuseConfiguration)
 $ErrorActionPreference='Stop'
 if($Version -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9-]+)?$'){throw 'Use a new version identifier.'}
 $mediaSourceRoot=Split-Path -Parent $PSScriptRoot

@@ -108,6 +108,46 @@ def _profile(engine, interval, start=0, end=None):
     return hashlib.sha256(canonical(identity).encode()).hexdigest()[:32]
 
 
+_MAGIX_PROXY = re.compile(r"^(.+)_(mp4|mov|mkv|avi|wmv|m4v|webm|mts|m2ts)_proxy_[a-f0-9]{32}_[a-f0-9]{32}\.mpg$", re.IGNORECASE)
+
+
+def proxy_skip(engine, source, root_id, profile, check):
+    """Recognize a redundant derivative, never substitute a guessed media path."""
+    match = _MAGIX_PROXY.fullmatch(source.name)
+    if not match:
+        return None
+    try:
+        root = engine.root(root_id)["path"]
+        source = inside(source, root, directory=False)
+        prefix, extension = match.group(1).casefold(), "." + match.group(2).casefold()
+        # MAGIX truncates some stems. Even an exact-name candidate is ambiguous
+        # if a second same-extension sibling shares the encoded prefix.
+        candidates = [p for p in source.parent.iterdir() if p.suffix.casefold() == extension and p.stem.casefold().startswith(prefix)]
+        if len(candidates) != 1:
+            return None
+        original = inside(candidates[0], root, directory=False)
+        with engine.connect() as connection:
+            aliases = list(connection.execute("SELECT * FROM aliases WHERE path=? COLLATE NOCASE", (str(original),)))
+            if not aliases or len({(row["asset_id"], row["bytes"], row["mtime_ns"]) for row in aliases}) != 1:
+                return None
+            alias = dict(aliases[0])
+            indexed = connection.execute("SELECT complete FROM indexes WHERE asset_id=? AND profile=?", (alias["asset_id"], profile)).fetchone()
+        if not indexed or not indexed["complete"]:
+            return None
+        info = original.stat()
+        if (info.st_size, info.st_mtime_ns) != (alias["bytes"], alias["mtime_ns"]):
+            return None
+        sha, size, modified = digest(original, check)
+        if (size, modified) != (alias["bytes"], alias["mtime_ns"]) or alias["asset_id"] != "asset-" + sha:
+            return None
+        return {"reason": "magix_proxy_original_indexed", "source_name": source.name, "source_path": str(source), "root_id": root_id,
+                "original_path": str(original), "original_asset_id": alias["asset_id"], "original_sha256": sha, "profile": profile}
+    except (BuddyError, OSError, ValueError):
+        # Unavailable or uncertain evidence leaves the usual media validation
+        # in charge. Control exceptions still propagate to pause/cancel work.
+        return None
+
+
 def index_unit(engine, job):
     """One 60-second chunk, so interactive jobs can run between chunks."""
     check = lambda: engine.check_control(job["job_id"])
@@ -124,15 +164,26 @@ def index_unit(engine, job):
                 if len(items) >= 100000:
                     raise BuddyError("inventory_limit", "Selected sources exceed 100,000 media files. Select a smaller scope.")
                 items.append({"root_id": root_id, "path": str(p)})
-        plan = {"items": items, "cursor": 0, "results": [], "failures": [], "selected": sorted(selected)}
+        plan = {"items": items, "cursor": 0, "results": [], "failures": [], "skipped": [], "selected": sorted(selected)}
         atomic_json(plan_file, plan)
+    plan.setdefault("skipped", [])
+    # Also upgrade a pending old checkpoint without restarting completed work.
+    plan["items"][plan["cursor"]:] = sorted(plan["items"][plan["cursor"]:], key=lambda item: bool(_MAGIX_PROXY.fullmatch(Path(item["path"]).name)))
     interval = float(job["params"].get("sample_seconds", 2))
     profile = _profile(engine, interval, job["params"].get("start_seconds", 0), job["params"].get("end_seconds"))
+    full_source = not plan["selected"] and not job["params"].get("start_seconds", 0) and job["params"].get("end_seconds") is None
     while plan["cursor"] < len(plan["items"]):
         check()
         item = plan["items"][plan["cursor"]]
         try:
             source = inside(item["path"], engine.root(item["root_id"])["path"], directory=False)
+            skipped = proxy_skip(engine, source, item["root_id"], profile, check) if full_source else None
+            if skipped:
+                plan["skipped"].append(skipped)
+                plan["cursor"] += 1
+                engine.progress(job["job_id"], indexed_files=plan["cursor"], total_files=len(plan["items"]), skipped_files=len(plan["skipped"]), current_file=source.name, stage="Skipped MAGIX proxy; original already indexed")
+                atomic_json(plan_file, plan)
+                continue
             if "asset_id" not in item:
                 meta = probe(engine, job, source)
                 item["asset_id"] = engine.register_asset(source, item["root_id"], check, meta)
@@ -209,12 +260,24 @@ def index_unit(engine, job):
             atomic_json(plan_file, plan)
             return None
         except (BuddyError, OSError, ValueError) as error:
-            plan["failures"].append({"source_name": Path(item["path"]).name, "code": getattr(error, "code", "index_failed"), "message": str(error)[:1000]})
+            plan["failures"].append({"source_name": Path(item["path"]).name, "source_path": item["path"], "root_id": item["root_id"], "code": getattr(error, "code", "index_failed"), "message": str(error)[:1000]})
             plan["cursor"] += 1
             atomic_json(plan_file, plan)
             # A corrupt asset must not prevent other selected recordings from indexing.
             return None
-    return {"results": plan["results"], "failures": plan["failures"], "profile": profile, "sample_seconds": interval, "local_analysis": True}
+    if full_source:
+        remaining = []
+        for failure in plan["failures"]:
+            check()
+            matches = [item for item in plan["items"] if (item["path"] == failure["source_path"] and item["root_id"] == failure.get("root_id", item["root_id"]))] if failure.get("source_path") else [item for item in plan["items"] if Path(item["path"]).name == failure["source_name"]]
+            skipped = proxy_skip(engine, Path(matches[0]["path"]), matches[0]["root_id"], profile, check) if len(matches) == 1 else None
+            if skipped:
+                plan["skipped"].append(dict(skipped, prior_failure=failure))
+            else:
+                remaining.append(failure)
+        plan["failures"] = remaining
+        atomic_json(plan_file, plan)
+    return {"results": plan["results"], "failures": plan["failures"], "skipped": plan["skipped"], "profile": profile, "sample_seconds": interval, "local_analysis": True}
 
 
 def search(engine, job):

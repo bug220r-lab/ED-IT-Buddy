@@ -39,8 +39,20 @@ Committed video and preview artifacts can themselves be selected for preview, ex
 
 Index jobs reuse identical-content samples while retaining source aliases. Changed source metadata excludes stale search results until reindexing. Changed model revisions cannot reuse previous embeddings. Finer-range profiles do not incorrectly mark a whole recording indexed.
 
+## MAGIX proxy handling
+
+Worker `0.3.2` skips a redundant proxy during whole-source indexing only when its filename follows the MAGIX pattern `<original-stem-or-prefix>_<extension>_proxy_<32-hex>_<32-hex>.mpg` and there is one unambiguous matching original in the same directory. Truncated MAGIX stems are accepted only when the prefix identifies one candidate. An arbitrary MPG, a missing original, or an ambiguous filename does not qualify.
+
+The original must already have a complete index for the current model and whole-source sampling profile. Its registered path, byte size, modification timestamp, and content hash must still match. Partial indexes, finer-range indexes, old model profiles, changed files, or unavailable evidence do not establish coverage. The normal media validation then remains in charge, including genuine failures that need review.
+
+Originals are processed before proxy candidates. Pending checkpoints retain completed work, and an unfinished job can reconsider a proxy failure after its original becomes fully indexed. Terminal historical receipts are not silently rewritten. The final manifest records `skipped` separately from `failures`, with the proxy path, original path and asset identity, profile, and `magix_proxy_original_indexed` reason. A skipped derivative alone does not make the job need review. Both the proxy and original remain intact; this rule never deletes a file, substitutes a media path, or changes a MAGIX project.
+
+The worker package and `get_capabilities.version` now share `__version__` (`0.3.2`). Desktop and local broker versions remain independent. This source/configuration update requires the separate scheduled MSI rollout and GPU preflight; see the assistant verification record for live acceptance.
+
 ## Verification
 
 Run `python -B -m unittest discover -s tests -p test_media_worker.py -v` from the Buddy repository. The fixtures exercise six hours of virtual source duration, VFR-like timestamps, recovery, idempotency, isolated download/conversion retry, source preservation, copy-first organization, source/model invalidation, queue controls, protocol correlation and owned process cancellation.
+
+Run `python -B -m unittest discover -s tests -p test_media_proxy_skip.py -v` for proxy skip regressions, including ambiguous/missing originals, stale metadata and content, profile mismatches, checkpoint recovery, source preservation, and separate skip receipts.
 
 Those fixtures use fake media tools and embeddings except the bounded cancellation subprocess. They are not a real six-hour decode, useful visual-search evaluation, new internet-download test, CUDA benchmark, or installed MSI acceptance result. Separate live checks have now established scheduled GPU inference, a supplied-URL download, partial band-footage indexing/search, preview/extraction, active-session delivery, and explicit verified INTERLINKED save-back. Full-corpus retrieval quality remains a separate gate in the [assistant verification record](../docs/assistant-release.md).

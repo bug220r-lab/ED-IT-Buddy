@@ -40,5 +40,5 @@ foreach($name in @('ED-IT Buddy.exe','ED-IT Buddy.Probe.exe')){
 $broker=Get-Content -LiteralPath (Join-Path $packageRoot 'assistant/package.json') -Raw|ConvertFrom-Json
 if($broker.version -ne '0.3.1'){throw 'Assistant broker version does not match the desktop package.'}
 $connection=Get-Content -LiteralPath (Join-Path $packageRoot 'assistant/config.example.json') -Raw|ConvertFrom-Json
-if($connection.remote.rpc -notmatch '\\v0\.3\.1\\media_worker\\rpc\.py$'){throw 'Assistant package does not target the accepted MSI worker version.'}
+if($connection.remote.rpc -notmatch '\\v0\.3\.2\\media_worker\\rpc\.py$'){throw 'Assistant package does not target the accepted MSI worker version.'}
 Write-Output 'PASS: assistant runtime allowlist, complete SHA-256 manifest,0.3.1 executable/broker metadata, x64/.NET4.8, and MSI worker target. No application was launched.'

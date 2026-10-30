@@ -14,6 +14,14 @@ import {CodexChat} from './codex.mjs';
 const KINDS=new Set(['download','index','search','preview','extract','organize']);
 const TERMINAL=new Set(['completed','failed','cancelled','needs_review','uncertain']);
 function requireText(v,label,max=500){if(typeof v!=='string'||!v.trim()||v.length>max)throw Error('Invalid '+label);return v.trim();}
+function indexOutcome(task,status=task.status){
+  const manifest=task.results?.manifest;
+  if(task.kind!=='index'||!['completed','needs_review'].includes(status)||!manifest)return null;
+  const indexed=Array.isArray(manifest.results)?manifest.results.length:0;
+  const skipped=Array.isArray(manifest.skipped)?manifest.skipped.filter(item=>item?.reason==='magix_proxy_original_indexed').length:0;
+  const failures=Array.isArray(manifest.failures)?manifest.failures.length:0;
+  return `Indexed ${indexed} file${indexed===1?'':'s'}; skipped ${skipped} MAGIX prox${skipped===1?'y':'ies'}; ${failures} need review.`;
+}
 export function validateJob(kind,p){
   if(!KINDS.has(kind)||!p||typeof p!=='object'||Array.isArray(p))throw Error('Unsupported task.');
   const allowed={download:['urls'],index:['root_ids','source_id','sample_seconds','start_seconds','end_seconds'],search:['query','root_ids','source_ids','limit'],preview:['asset_id','start_seconds','end_seconds'],extract:['asset_id','start_seconds','end_seconds'],organize:['asset_ids','group_by','tag']}[kind];
@@ -66,8 +74,9 @@ export class Assistant {
           try{const value=await this.remote.request('get_job',{job_id:t.remote_job_id});const j=value.job||value;const p=j.progress||{};
             let progress=typeof p==='number'?p:0;if(p.total_items)progress=p.completed_items/p.total_items;if(p.total_files)progress=((p.indexed_files||0)+(p.source_duration_seconds?Math.min(1,(p.indexed_seconds||0)/p.source_duration_seconds):0))/p.total_files;
             const stage=typeof p==='object'?(p.stage||p.current_file||''):'';
-            this.store.update(t,{status:j.status||t.status,progress:j.status==='completed'?1:Math.max(0,Math.min(1,progress)),message:j.message||j.error?.message||j.error||stage,remote:j});
+            this.store.update(t,{status:j.status||t.status,progress:j.status==='completed'?1:Math.max(0,Math.min(1,progress)),message:indexOutcome(t,j.status||t.status)||j.message||j.error?.message||j.error||stage,remote:j});
             if(['completed','needs_review'].includes(j.status)&&!t.results?.manifest){const result=await this.remote.request('get_results',{job_id:t.remote_job_id});if(result.manifest)this.store.update(t,{results:result,outputs:result.manifest.assets||[]});}
+            const outcome=indexOutcome(t);if(outcome&&t.message!==outcome)this.store.update(t,{message:outcome});
           }catch(e){this.status.msi=e.message;break;}
         }
       }

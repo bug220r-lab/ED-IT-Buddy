@@ -16,6 +16,8 @@ import time
 import uuid
 from pathlib import Path
 
+from . import __version__
+
 FORMAT = "buddy-media-manifest-v1"
 ID = re.compile(r"^[a-zA-Z0-9_.-]{1,100}$")
 MEDIA = {".mp4", ".mov", ".mkv", ".avi", ".wmv", ".m4v", ".webm", ".mpg", ".mpeg", ".mts", ".m2ts"}
@@ -199,7 +201,7 @@ class Engine:
         tools = self.tools()
         model_path = self.config.get("model_path", "")
         fresh = bool(heartbeat and time.time() - heartbeat.get("observed_at", 0) < 20)
-        return {"format": "buddy-media-capabilities-v1", "host": socket.gethostname(), "version": "0.3.0",
+        return {"format": "buddy-media-capabilities-v1", "host": socket.gethostname(), "version": __version__,
                 "worker_online": fresh, "heartbeat": heartbeat,
                 "tools": {k: bool(p and Path(p).is_file()) for k, p in tools.items()},
                 "model_configured": bool(model_path and Path(model_path).is_dir()),
